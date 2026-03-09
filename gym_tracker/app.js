@@ -102,7 +102,6 @@ const btnBackHome = document.getElementById('btn-back-home');
 const btnBackDays = document.getElementById('btn-back-days');
 const btnBackExercises = document.getElementById('btn-back-exercises');
 const btnSaveSet = document.getElementById('btn-save-set');
-const btnFinishExercise = document.getElementById('btn-finish-exercise');
 
 const inputEmail = document.getElementById('input-email');
 const dayListContainer = document.getElementById('day-list');
@@ -551,10 +550,13 @@ function openExercise(exerciseName) {
         currentSession.logs[activeExercise] = { 1: [] };
     }
 
-    // Determine max week registered
-    const weeks = Object.keys(currentSession.logs[activeExercise]).map(w => parseInt(w));
-    maxWeek = weeks.length > 0 ? Math.max(...weeks) : 1;
-    currentWeek = maxWeek; // Default to the latest week
+    // Determine max week globally based on registration date
+    maxWeek = calculateMaxWeek();
+
+    // Set currentWeek to maxWeek if we were just opening the exercise, 
+    // but don't reset it if the user is already navigating weeks? 
+    // Actually, usually when opening an exercise you want to see the latest.
+    currentWeek = maxWeek;
 
     renderWeekNavigation();
 
@@ -757,11 +759,6 @@ btnBackExercises.addEventListener('click', () => {
     showScreen(screenExercises);
 });
 
-btnFinishExercise.addEventListener('click', () => {
-    // maybe mark exercise as done visually
-    showScreen(screenExercises);
-});
-
 btnSaveSet.addEventListener('click', saveSet);
 
 btnPrevWeek.addEventListener('click', () => {
@@ -780,16 +777,8 @@ btnNextWeek.addEventListener('click', () => {
     }
 });
 
-btnAddWeek.addEventListener('click', () => {
-    maxWeek++;
-    currentWeek = maxWeek;
-    currentSession.logs[activeExercise][currentWeek] = [];
-    renderWeekNavigation();
-    renderSets();
-
-    // Save to Firestore
-    syncSessionToFirestore();
-});
+// btnAddWeek logic removed as weeks are now automatic based on calendar progression
+// btnAddWeek.addEventListener('click', () => { ... });
 
 // App Init - show login first
 showScreen(screenLogin);

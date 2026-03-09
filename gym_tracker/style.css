@@ -68,27 +68,25 @@ body {
 }
 
 .glass-container {
-    width: 100%;
-    max-width: 400px;
     background: var(--glass-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
-    padding: 2rem;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 450px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    z-index: 10;
-    height: 90vh;
-    max-height: 800px;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    z-index: 10;
 }
 
 .screen {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     animation: fadeIn 0.3s ease-in-out;
 }
 
@@ -466,11 +464,13 @@ p {
 
 
 .consistency-container {
-    margin-top: 1.5rem;
+    margin-top: 1rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
-    animation: fadeIn 0.5s ease;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
 .week-card {
@@ -641,6 +641,17 @@ p {
     margin: 0;
 }
 
+.app-logo {
+    width: 180px;
+    /* Reduced slightly from user's manual 200px to balance mobile space */
+    height: auto;
+    margin: -0.5rem auto 1rem;
+    display: block;
+    filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
+    animation: fadeIn 0.8s ease forwards;
+    flex-shrink: 0;
+}
+
 .modal-input {
     background: var(--card-bg);
     border: 1px solid var(--glass-border);
@@ -733,83 +744,46 @@ p {
 
     html,
     body {
-        height: 100% !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
-        display: block !important;
+        height: 100%;
+        overflow: hidden;
     }
 
     .glass-container {
-        display: flex !important;
-        flex-direction: column !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        bottom: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        max-width: none !important;
-        max-height: none !important;
-        border-radius: 0 !important;
-        border: none !important;
-        margin: 0 !important;
-        padding: 1.5rem !important;
-        overflow-y: auto !important;
-    }
-
-    h1 {
-        font-size: 2.2rem;
+        height: 100vh;
+        max-width: none;
+        border-radius: 0;
+        border: none;
+        padding: 1rem 1.25rem;
     }
 
     h2 {
-        font-size: 1.3rem;
+        font-size: 1.25rem;
         margin-bottom: 1rem;
     }
 
     p {
-        font-size: 0.95rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .app-logo {
+        width: 140px;
+        margin: 0 auto 0.5rem;
+    }
+
+    .consistency-container,
+    .exercise-list,
+    .sets-log {
+        flex: 1;
+        overflow-y: auto;
+    }
+
+    .sets-log {
+        min-height: 150px;
     }
 
     .btn-primary,
-    .btn-secondary,
-    .exercise-btn,
-    .day-btn {
-        padding: 0.85rem;
-        font-size: 0.95rem;
-    }
-
-    .fab-btn {
-        bottom: 1.5rem;
-        right: 1.5rem;
-        width: 45px;
-        height: 45px;
-        font-size: 1.8rem;
-    }
-
-    .input-field input {
-        padding: 0.5rem;
-        font-size: 1rem;
-    }
-
-    .exercise-description {
-        flex-direction: row;
-        /* Keep side by side on mobile too */
-        gap: 1rem;
-    }
-
-    .desc-label {
-        font-size: 0.6rem;
-    }
-
-    .desc-value {
-        font-size: 0.75rem;
-    }
-
-    .sets-log li {
-        padding: 0.6rem 0.85rem;
-        font-size: 0.85rem;
+    .btn-secondary {
+        padding: 0.75rem;
     }
 }
