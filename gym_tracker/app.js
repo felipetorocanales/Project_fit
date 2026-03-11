@@ -351,7 +351,7 @@ function renderConsistencyTracker() {
 
     // Render Weeks
     const dayNamesShort = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = today.toLocaleDateString('sv-SE'); // YYYY-MM-DD in local time
 
     for (let w = effectiveMaxWeek; w >= 1; w--) {
         const weekMonday = new Date(currentMonday);
@@ -589,7 +589,7 @@ function openExercise(exerciseName) {
 
 function saveSet() {
     const repsStr = inputReps.value.trim();
-    const weightStr = inputWeight.value.trim();
+    let weightStr = inputWeight.value.trim().replace(',', '.'); // Handle comma as decimal separator
 
     if (!repsStr || !weightStr) {
         showToast("Por favor ingresa repeticiones y kilos.", "error");
@@ -619,7 +619,7 @@ function saveSet() {
 
     // Record training date if not already recorded today
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = now.toLocaleDateString('sv-SE'); // YYYY-MM-DD in local time
     if (!currentSession.trainingDates) currentSession.trainingDates = [];
     if (!currentSession.trainingDates.includes(todayStr)) {
         currentSession.trainingDates.push(todayStr);

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gym Tracker Pro</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=2.9">
+    <link rel="stylesheet" href="style.css?v=3.6">
 </head>
 
 <body>
@@ -15,12 +15,14 @@
         <!-- Screen 0: Login -->
         <div id="screen-login" class="screen active">
             <img src="logo.png" alt="Gym Tracker Logo" class="app-logo">
-            <p>Ingresa tu correo para comenzar</p>
-            <div class="input-field" style="margin-bottom: 1.5rem;">
-                <label>Correo Electrónico</label>
-                <input type="email" id="input-email" placeholder="tu@correo.com" autocomplete="email">
+            <p style="margin-bottom: 1rem;">Ingresa tu correo para comenzar</p>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <div class="input-field">
+                    <label>Correo Electrónico</label>
+                    <input type="email" id="input-email" placeholder="tu@correo.com" autocomplete="email">
+                </div>
+                <button id="btn-login" class="btn-primary">Entrar</button>
             </div>
-            <button id="btn-login" class="btn-primary">Entrar</button>
         </div>
 
         <!-- Screen 1: Start Day -->
@@ -82,7 +84,7 @@
                 </div>
                 <div class="input-field">
                     <label>Kilos</label>
-                    <input type="number" id="input-weight" placeholder="0.0" step="0.1" inputmode="decimal">
+                    <input type="text" id="input-weight" placeholder="0.0" inputmode="decimal">
                 </div>
             </div>
 
