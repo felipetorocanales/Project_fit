@@ -16,15 +16,21 @@
     font-family: 'Outfit', sans-serif;
 }
 
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent body scroll */
+}
+
 body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow: hidden;
     position: relative;
+    padding: 1rem;
 }
 
 /* Background gradient blobs */
@@ -73,10 +79,12 @@ body {
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
-    padding: 2.5rem;
+    padding: 2rem 1.5rem;
     width: 100%;
     max-width: 550px;
-    max-height: 95vh;
+    height: 100%;
+    max-height: 90vh; /* Fallback */
+    max-height: 90dvh;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     display: flex;
     flex-direction: column;
@@ -185,7 +193,7 @@ p {
 
 .fab-btn {
     position: absolute;
-    bottom: 2rem;
+    top: 1rem;
     right: 1.5rem;
     width: 50px;
     height: 50px;
@@ -259,9 +267,11 @@ p {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    margin-bottom: 1.5rem;
+    padding-bottom: 5rem; /* Extra space at bottom for scrolling */
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
 }
 
 .exercise-btn {
@@ -279,11 +289,58 @@ p {
     transform: translateY(-1px);
 }
 
-/* Row wrappers for items with a delete button */
+/* Item Wrapper for swipe-to-delete */
+.list-item-container {
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    margin-bottom: 0.75rem;
+    background: transparent;
+    flex-shrink: 0;
+}
+
+.swipe-delete-bg {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(239, 68, 68, 0.8);
+    display: flex;
+    align-items: center;
+    padding-left: 1.5rem;
+    font-size: 1.5rem;
+    z-index: 1;
+    color: white;
+}
+
+.swipe-content {
+    position: relative;
+    z-index: 2;
+    transition: transform 0.2s ease-out;
+    background: var(--bg-primary); 
+    width: 100%;
+    /* Keep touch-action pan-y to allow scrolling vertically but capture horizontal precisely */
+    touch-action: pan-y;
+}
+
+/* Row wrappers */
 .list-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+/* Remove margin from original buttons since wrapper handles it */
+.day-btn {
+    background: var(--card-bg);
+    color: var(--text-primary);
+    text-align: left;
+    border: 1px solid var(--accent);
+    padding: 1rem;
+    border-radius: 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
 .list-row .day-btn,
@@ -743,16 +800,15 @@ p {
 /* Mobile Responsiveness */
 @media (max-width: 768px) {
 
-    html,
     body {
-        height: 100%;
-        overflow: hidden;
+        align-items: flex-start;
+        padding: 0;
     }
 
     .glass-container {
         height: 100dvh;
         height: 100vh;
-        max-height: none;
+        max-height: 100dvh;
         max-width: none;
         border-radius: 0;
         border: none;

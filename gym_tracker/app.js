@@ -117,6 +117,26 @@ const inputWeight = document.getElementById('input-weight');
 const inputReps = document.getElementById('input-reps');
 const setsListEl = document.getElementById('sets-list');
 
+// Setup editable exercise name
+currentExerciseNameEl.contentEditable = "true";
+currentExerciseNameEl.style.outline = "none";
+currentExerciseNameEl.style.borderBottom = "1px dashed rgba(255,255,255,0.3)";
+currentExerciseNameEl.style.display = "inline-block";
+currentExerciseNameEl.addEventListener('blur', async () => {
+    const newName = currentExerciseNameEl.textContent.trim();
+    if (newName && newName !== activeExercise) {
+        await renameExercise(activeExercise, newName);
+    } else {
+        currentExerciseNameEl.textContent = activeExercise;
+    }
+});
+currentExerciseNameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        currentExerciseNameEl.blur();
+    }
+});
+
 // Week Navigation Elements
 const btnPrevWeek = document.getElementById('btn-prev-week');
 const btnNextWeek = document.getElementById('btn-next-week');
@@ -137,6 +157,17 @@ function showToast(message, type = 'info') {
     }, 2000);
 }
 
+function normalizeText(text) {
+    if (!text) return text;
+    return text.toString()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 // Custom Modal Prompt system
 const modalOverlay = document.getElementById('modal-overlay');
 const modalLabel = document.getElementById('modal-label');
@@ -146,7 +177,8 @@ const modalCancel = document.getElementById('modal-cancel');
 
 function showModal(label, placeholder = '') {
     return new Promise((resolve) => {
-        modalLabel.textContent = label;
+        modalLabel.innerHTML = label; // Support HTML
+        modalInput.style.display = 'block'; // Ensure input is visible
         modalInput.placeholder = placeholder;
         modalInput.value = '';
         modalOverlay.classList.remove('hidden');
@@ -169,6 +201,54 @@ function showModal(label, placeholder = '') {
 
         function cleanup() {
             modalOverlay.classList.add('hidden');
+            modalConfirm.removeEventListener('click', onConfirm);
+            modalCancel.removeEventListener('click', onCancel);
+            modalOverlay.removeEventListener('click', onOverlayClick);
+            document.removeEventListener('keydown', onKeydown);
+        }
+
+        function onOverlayClick(e) {
+            if (e.target === modalOverlay) onCancel();
+        }
+
+        modalConfirm.addEventListener('click', onConfirm);
+        modalCancel.addEventListener('click', onCancel);
+        modalOverlay.addEventListener('click', onOverlayClick);
+        document.addEventListener('keydown', onKeydown);
+    });
+}
+
+function showConfirm(labelHtml) {
+    return new Promise((resolve) => {
+        modalLabel.innerHTML = labelHtml;
+        modalInput.style.display = 'none'; // Hide input for purely confirm dialogs
+        modalOverlay.classList.remove('hidden');
+        
+        // Change confirm button color to red for deletions
+        const originalBg = modalConfirm.style.background;
+        modalConfirm.style.background = '#ef4444';
+        modalConfirm.textContent = 'Eliminar';
+
+        function onConfirm() {
+            cleanup();
+            resolve(true);
+        }
+
+        function onCancel() {
+            cleanup();
+            resolve(false);
+        }
+
+        function onKeydown(e) {
+            if (e.key === 'Enter') onConfirm();
+            if (e.key === 'Escape') onCancel();
+        }
+
+        function cleanup() {
+            modalOverlay.classList.add('hidden');
+            modalInput.style.display = ''; // Reset display style
+            modalConfirm.style.background = originalBg; // Reset color
+            modalConfirm.textContent = 'Confirmar'; // Reset text
             modalConfirm.removeEventListener('click', onConfirm);
             modalCancel.removeEventListener('click', onCancel);
             modalOverlay.removeEventListener('click', onOverlayClick);
@@ -233,6 +313,161 @@ function calculateMaxWeek() {
     return weeksDiff + 1;
 }
 
+function migrateSessionData() {
+    let modified = false;
+
+    // 1. Migrate Days
+    if (currentSession.days && currentSession.days.length > 0) {
+        const dayMap = {};
+        const newDays = [];
+
+        currentSession.days.forEach(day => {
+            const norm = normalizeText(day);
+            if (!dayMap[norm]) {
+                let canonical = day;
+                for (const key in exercisesByCategory) {
+                    if (normalizeText(key) === norm) {
+                        canonical = key;
+                        break;
+                    }
+                }
+                dayMap[norm] = { canonical, duplicates: [] };
+                newDays.push(canonical);
+            } else {
+                dayMap[norm].duplicates.push(day);
+            }
+        });
+
+        for (const norm in dayMap) {
+            const group = dayMap[norm];
+            if (group.duplicates.length > 0) {
+                modified = true;
+                const can = group.canonical;
+
+                group.duplicates.forEach(dup => {
+                    if (currentSession.customExercises && currentSession.customExercises[dup]) {
+                        if (!currentSession.customExercises[can]) currentSession.customExercises[can] = [];
+                        currentSession.customExercises[dup].forEach(ex => {
+                            if (!currentSession.customExercises[can].includes(ex)) currentSession.customExercises[can].push(ex);
+                        });
+                        delete currentSession.customExercises[dup];
+                    }
+
+                    if (currentSession.hiddenExercises && currentSession.hiddenExercises[dup]) {
+                        if (!currentSession.hiddenExercises[can]) currentSession.hiddenExercises[can] = [];
+                        currentSession.hiddenExercises[dup].forEach(ex => {
+                            if (!currentSession.hiddenExercises[can].includes(ex)) currentSession.hiddenExercises[can].push(ex);
+                        });
+                        delete currentSession.hiddenExercises[dup];
+                    }
+
+                    if (currentSession.exerciseOrder && currentSession.exerciseOrder[dup]) {
+                        delete currentSession.exerciseOrder[dup];
+                    }
+                });
+            }
+        }
+        
+        if (modified) currentSession.days = newDays;
+    }
+
+    // 2. Migrate Exercises (Logs and custom config)
+    const exMap = {};
+    const logKeys = Object.keys(currentSession.logs || {});
+
+    // Known canonicals
+    const allKnownExNorms = {};
+    for (const cat in exercisesByCategory) {
+        exercisesByCategory[cat].forEach(ex => allKnownExNorms[normalizeText(ex)] = ex);
+    }
+    for (const ex in exerciseDetails) {
+        allKnownExNorms[normalizeText(ex)] = ex;
+    }
+
+    logKeys.forEach(exKey => {
+        const norm = normalizeText(exKey);
+        let canonical = allKnownExNorms[norm];
+        if (!canonical) {
+            if (!exMap[norm]) {
+                exMap[norm] = exKey;
+                canonical = exKey;
+            } else {
+                canonical = exMap[norm];
+            }
+        }
+
+        if (canonical && canonical !== exKey) {
+            modified = true;
+            if (!currentSession.logs[canonical]) currentSession.logs[canonical] = {};
+            
+            const sourceWeeks = currentSession.logs[exKey];
+            for (const week in sourceWeeks) {
+                if (!currentSession.logs[canonical][week]) currentSession.logs[canonical][week] = [];
+                currentSession.logs[canonical][week].push(...sourceWeeks[week]);
+            }
+            delete currentSession.logs[exKey];
+        } else {
+            exMap[norm] = canonical;
+        }
+    });
+
+    if (currentSession.customDescriptions) {
+        Object.keys(currentSession.customDescriptions).forEach(exKey => {
+            const norm = normalizeText(exKey);
+            const canonical = allKnownExNorms[norm] || exMap[norm] || exKey;
+            if (canonical !== exKey) {
+                modified = true;
+                currentSession.customDescriptions[canonical] = currentSession.customDescriptions[exKey];
+                delete currentSession.customDescriptions[exKey];
+            }
+        });
+    }
+
+    if (currentSession.customExercises) {
+        for (const cat in currentSession.customExercises) {
+            const newList = [];
+            currentSession.customExercises[cat].forEach(ex => {
+                if (!ex) return; // ignore nulls
+                const norm = normalizeText(ex);
+                const canonical = allKnownExNorms[norm] || exMap[norm] || ex;
+                if (canonical !== ex) modified = true;
+                if (!newList.includes(canonical)) newList.push(canonical);
+            });
+            currentSession.customExercises[cat] = newList;
+        }
+    }
+
+    if (currentSession.hiddenExercises) {
+        for (const cat in currentSession.hiddenExercises) {
+            const newList = [];
+            currentSession.hiddenExercises[cat].forEach(ex => {
+                if (!ex) return;
+                const norm = normalizeText(ex);
+                const canonical = allKnownExNorms[norm] || exMap[norm] || ex;
+                if (canonical !== ex) modified = true;
+                if (!newList.includes(canonical)) newList.push(canonical);
+            });
+            currentSession.hiddenExercises[cat] = newList;
+        }
+    }
+
+    if (currentSession.exerciseOrder) {
+        for (const cat in currentSession.exerciseOrder) {
+            const newList = [];
+            currentSession.exerciseOrder[cat].forEach(ex => {
+                if (!ex) return;
+                const norm = normalizeText(ex);
+                const canonical = allKnownExNorms[norm] || exMap[norm] || ex;
+                if (canonical !== ex) modified = true;
+                if (!newList.includes(canonical)) newList.push(canonical);
+            });
+            currentSession.exerciseOrder[cat] = newList;
+        }
+    }
+
+    return modified;
+}
+
 async function loadSessionFromFirestore() {
     if (!currentUserEmail) return;
     try {
@@ -251,6 +486,13 @@ async function loadSessionFromFirestore() {
             // Sync currentWeek and maxWeek with LOADED data
             maxWeek = calculateMaxWeek();
             currentWeek = maxWeek;
+
+            // Automatically fix case-sensitivity duplicated data
+            const wasModified = migrateSessionData();
+            if (wasModified) {
+                // Background save the migrated structure back to firestore
+                syncSessionToFirestore();
+            }
         } else {
             // New user, save default structure
             currentSession = {
@@ -435,12 +677,27 @@ function renderDayList() {
     }
 
     currentSession.days.forEach((day, index) => {
+        // Container
+        const container = document.createElement('div');
+        container.className = 'list-item-container';
+
+        // Delete Background
+        const deleteBg = document.createElement('div');
+        deleteBg.className = 'swipe-delete-bg';
+        deleteBg.innerHTML = '🗑️';
+
+        // Swipe Content Wrapper
+        const swipeContent = document.createElement('div');
+        swipeContent.className = 'swipe-content';
+
         const row = document.createElement('div');
         row.className = 'list-row';
+        row.style.width = '100%';
 
         const btn = document.createElement('button');
         btn.className = 'day-btn';
         btn.textContent = day;
+        btn.style.margin = '0'; // overridden by flex
         btn.addEventListener('click', () => {
             activeDay = day;
             currentSession.date = new Date().toISOString();
@@ -448,21 +705,82 @@ function renderDayList() {
             showScreen(screenExercises);
         });
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-row-btn';
-        delBtn.textContent = '−';
-        delBtn.title = 'Eliminar día';
-        delBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
+        const performDelete = async () => {
+            const confirmed = await showConfirm(`¿Estás seguro de que deseas eliminar <strong>"${day}"</strong>?<br><br><span style="color:var(--accent); font-size:0.9rem;">⚠️ ADVERTENCIA: Se borrará toda la historia de las series acumulada en este día.</span>`);
+            if (!confirmed) {
+                swipeContent.style.transform = `translateX(0)`;
+                return;
+            }
+
             currentSession.days.splice(index, 1);
+            
+            // Clean up dependent data just in case
+            if(currentSession.customExercises && currentSession.customExercises[day]) {
+                delete currentSession.customExercises[day];
+            }
+            if(currentSession.hiddenExercises && currentSession.hiddenExercises[day]) {
+                delete currentSession.hiddenExercises[day];
+            }
+            if(currentSession.exerciseOrder && currentSession.exerciseOrder[day]) {
+                delete currentSession.exerciseOrder[day];
+            }
+
             renderDayList();
             showToast('🗑 Día eliminado', 'error');
             await syncSessionToFirestore();
+        };
+
+        // Swipe events
+        let startX = 0;
+        let currentX = 0;
+        let isDragging = false;
+        
+        swipeContent.addEventListener('pointerdown', (e) => {
+            // Only care about main button or touch
+            if(e.button !== 0 && e.pointerType === 'mouse') return;
+            isDragging = true;
+            startX = e.clientX;
+            swipeContent.style.transition = 'none';
         });
 
+        swipeContent.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            currentX = e.clientX;
+            let diff = currentX - startX;
+            if (diff < 0) diff = 0; // only swipe right
+
+            // add resistance
+            if (diff > 150) {
+                diff = 150 + (diff - 150) * 0.2;
+            }
+            swipeContent.style.transform = `translateX(${diff}px)`;
+        });
+
+        const endSwipe = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            swipeContent.style.transition = 'transform 0.3s ease-out';
+            
+            let diff = currentX - startX;
+            if (diff > 120) {
+                // Trigger Delete
+                swipeContent.style.transform = `translateX(100%)`;
+                setTimeout(performDelete, 300); // Wait for animation
+            } else {
+                // Snap back
+                swipeContent.style.transform = `translateX(0)`;
+            }
+        };
+
+        swipeContent.addEventListener('pointerup', endSwipe);
+        swipeContent.addEventListener('pointercancel', endSwipe);
+        swipeContent.addEventListener('pointerleave', endSwipe);
+
         row.appendChild(btn);
-        row.appendChild(delBtn);
-        dayListContainer.appendChild(row);
+        swipeContent.appendChild(row);
+        container.appendChild(deleteBg);
+        container.appendChild(swipeContent);
+        dayListContainer.appendChild(container);
     });
 }
 
@@ -471,14 +789,38 @@ function renderExerciseList(dayCategory) {
     exerciseListContainer.innerHTML = '';
     currentDayTitleEl.textContent = dayCategory;
 
-    // Combine standard exercises with custom ones for this day
-    const standardExs = exercisesByCategory[dayCategory] || [];
+    // Find standard exercises by normalizing the keys
+    let standardExs = [];
+    const normalizedDayCat = normalizeText(dayCategory);
+    for (const key in exercisesByCategory) {
+        if (normalizeText(key) === normalizedDayCat) {
+            standardExs = exercisesByCategory[key];
+            break;
+        }
+    }
     const hidden = currentSession.hiddenExercises?.[dayCategory] || [];
     const customExs = currentSession.customExercises[dayCategory] || [];
-    const allExercises = [
+    let allExercises = [
         ...standardExs.filter(e => !hidden.includes(e)),
         ...customExs
     ];
+
+    // Read saved order if it exists, use it to sort
+    if (!currentSession.exerciseOrder) currentSession.exerciseOrder = {};
+    if (currentSession.exerciseOrder[dayCategory]) {
+        const orderArray = currentSession.exerciseOrder[dayCategory];
+        allExercises.sort((a, b) => {
+            let indexA = orderArray.indexOf(a);
+            let indexB = orderArray.indexOf(b);
+            // If an exercise is not in the order array (e.g., new custom exercise), append it to the end
+            if (indexA === -1) indexA = 9999;
+            if (indexB === -1) indexB = 9999;
+            return indexA - indexB;
+        });
+    }
+
+    // Save current active list order for potential moves later
+    currentSession.exerciseOrder[dayCategory] = [...allExercises];
 
     if (allExercises.length === 0) {
         exerciseListContainer.innerHTML = `
@@ -489,42 +831,351 @@ function renderExerciseList(dayCategory) {
         return;
     }
 
+    let draggedItemIndex = null;
+    let draggedOverItemIndex = null;
+
     allExercises.forEach((ex, index) => {
-        const isCustom = index >= standardExs.filter(e => !hidden.includes(e)).length;
+        const isCustom = customExs.includes(ex);
+
+        // Container
+        const container = document.createElement('div');
+        container.className = 'list-item-container';
+
+        // Delete Background
+        const deleteBg = document.createElement('div');
+        deleteBg.className = 'swipe-delete-bg';
+        deleteBg.innerHTML = '🗑️';
+
+        // Swipe Content Wrapper
+        const swipeContent = document.createElement('div');
+        swipeContent.className = 'swipe-content';
 
         const row = document.createElement('div');
         row.className = 'list-row';
+        row.style.width = '100%';
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '0'; 
+        row.style.background = 'var(--card-bg)';
+        row.style.border = '1px solid var(--glass-border)';
+        row.style.borderRadius = '12px';
+        row.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+        row.dataset.index = index; // Store index for reordering
+        row.draggable = false; // Disable direct row dragging for mouse
+
+
+        // Drag Handle
+        let wasDragged = false;
+        const dragHandle = document.createElement('div');
+        dragHandle.innerHTML = '≡';
+        dragHandle.style.cursor = 'grab';
+        dragHandle.style.color = 'rgba(255,255,255,0.35)';
+        dragHandle.style.fontSize = '2rem';
+        dragHandle.style.padding = '0.5rem 1rem';
+        dragHandle.style.userSelect = 'none';
+        dragHandle.style.touchAction = 'none';
+        dragHandle.draggable = true; // Handle is the draggable part for mouse
+
 
         const btn = document.createElement('button');
         btn.className = 'exercise-btn';
-        btn.innerHTML = `<span>${ex}</span> <span style="color:var(--accent)">+</span>`;
-        btn.addEventListener('click', () => openExercise(ex));
+        btn.style.flexGrow = '1';
+        btn.style.textAlign = 'left';
+        btn.style.background = 'transparent'; 
+        btn.style.border = 'none'; 
+        btn.style.boxShadow = 'none';
+        btn.style.padding = '1rem';
+        btn.innerHTML = `<span>${ex}</span>`;
+        btn.addEventListener('click', (e) => {
+            if (wasDragged) {
+                e.preventDefault();
+                wasDragged = false;
+                return;
+            }
+            openExercise(ex);
+        });
 
-        const delBtn = document.createElement('button');
-        delBtn.className = 'delete-row-btn';
-        delBtn.textContent = '−';
-        delBtn.title = 'Eliminar ejercicio';
-        delBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
+        const performDelete = async () => {
+            const confirmed = await showConfirm(`¿Estás seguro de que deseas eliminar <strong>"${ex}"</strong>?<br><br><span style="color:var(--accent); font-size:0.9rem;">⚠️ ADVERTENCIA: Se perderá el acceso rápido a la historia de las series de este ejercicio.</span>`);
+            if (!confirmed) {
+                swipeContent.style.transform = `translateX(0)`;
+                return;
+            }
+
             if (isCustom) {
-                // Remove from custom list
                 const customList = currentSession.customExercises[dayCategory];
                 const customIndex = customList.indexOf(ex);
                 if (customIndex > -1) customList.splice(customIndex, 1);
             } else {
-                // Hide standard exercise
                 if (!currentSession.hiddenExercises) currentSession.hiddenExercises = {};
                 if (!currentSession.hiddenExercises[dayCategory]) currentSession.hiddenExercises[dayCategory] = [];
                 currentSession.hiddenExercises[dayCategory].push(ex);
             }
+            const activeOrder = currentSession.exerciseOrder && currentSession.exerciseOrder[dayCategory];
+            if (activeOrder) {
+                const orderIdx = activeOrder.indexOf(ex);
+                if (orderIdx > -1) activeOrder.splice(orderIdx, 1);
+            }
+            
+            // Note: We don't delete logs so history works, just hide the exercise
+
             renderExerciseList(dayCategory);
             showToast('🗑 Ejercicio eliminado', 'error');
             await syncSessionToFirestore();
+        };
+
+        // Swipe events for DELETE
+        let startX = 0;
+        let currentX = 0;
+        let isSwiping = false;
+        
+        swipeContent.addEventListener('pointerdown', (e) => {
+            if(e.button !== 0 && e.pointerType === 'mouse') return;
+            
+            isSwiping = true;
+            startX = e.clientX;
+            swipeContent.style.transition = 'none';
+        });
+
+        swipeContent.addEventListener('pointermove', (e) => {
+            if (!isSwiping) return;
+            currentX = e.clientX;
+            let diff = currentX - startX;
+            if (diff < 0) diff = 0; // only swipe right
+
+            if (diff > 150) {
+                diff = 150 + (diff - 150) * 0.2;
+            }
+            swipeContent.style.transform = `translateX(${diff}px)`;
+        });
+
+        const endSwipe = () => {
+            if (!isSwiping) return;
+            isSwiping = false;
+            swipeContent.style.transition = 'transform 0.3s ease-out';
+            
+            let diff = currentX - startX;
+            if (diff > 120) {
+                swipeContent.style.transform = `translateX(100%)`;
+                setTimeout(performDelete, 300);
+            } else {
+                swipeContent.style.transform = `translateX(0)`;
+            }
+        };
+
+        swipeContent.addEventListener('pointerup', endSwipe);
+        swipeContent.addEventListener('pointercancel', endSwipe);
+        swipeContent.addEventListener('pointerleave', endSwipe);
+
+        // --- Drag and Drop Logic for REORDERING (Mouse & Touch on Handle) ---
+
+        const applyReorder = async () => {
+            if (draggedItemIndex === null || draggedOverItemIndex === null || draggedItemIndex === draggedOverItemIndex) {
+                draggedItemIndex = null;
+                draggedOverItemIndex = null;
+                // Restore opacity in case drop was at same position
+                container.style.opacity = '1';
+                Array.from(exerciseListContainer.children).forEach(child => {
+                    child.style.transform = '';
+                    child.style.transition = '';
+                });
+                return;
+            }
+            const list = currentSession.exerciseOrder[dayCategory];
+            const itemToMove = list.splice(draggedItemIndex, 1)[0];
+            list.splice(draggedOverItemIndex, 0, itemToMove);
+            
+            draggedItemIndex = null;
+            draggedOverItemIndex = null;
+            renderExerciseList(dayCategory);
+            await syncSessionToFirestore();
+        };
+
+        dragHandle.addEventListener('dragstart', (e) => {
+            draggedItemIndex = parseInt(row.dataset.index);
+            container.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = "move";
+            // Use the container as the drag image
+            const rect = container.getBoundingClientRect();
+            e.dataTransfer.setDragImage(container, e.clientX - rect.left, e.clientY - rect.top);
+        });
+
+        row.addEventListener('dragover', (e) => {
+            e.preventDefault(); 
+            const tgtIndex = parseInt(row.dataset.index);
+            if (tgtIndex !== draggedOverItemIndex) {
+                draggedOverItemIndex = tgtIndex;
+            }
+        });
+
+        row.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            container.style.borderTop = draggedItemIndex > parseInt(row.dataset.index) ? '2px solid var(--accent)' : '';
+            container.style.borderBottom = draggedItemIndex < parseInt(row.dataset.index) ? '2px solid var(--accent)' : '';
+        });
+
+        row.addEventListener('dragleave', () => {
+             container.style.borderTop = '';
+             container.style.borderBottom = '';
+        });
+
+        row.addEventListener('drop', (e) => {
+            e.preventDefault();
+            container.style.borderTop = '';
+            container.style.borderBottom = '';
+        });
+
+        row.addEventListener('dragend', () => {
+            container.style.opacity = '1';
+            Array.from(exerciseListContainer.children).forEach(child => {
+                child.style.borderTop = '';
+                child.style.borderBottom = '';
+            });
+            applyReorder();
+        });
+
+        let touchStartY = 0;
+        let initialIndex = null;
+        let holdTimeout = null;
+        let isDraggingTouch = false;
+        let ghostEl = null;
+        let touchOffsetY = 0;
+
+        const cleanUpDrag = () => {
+            if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+            container.style.opacity = '0.3';
+            exerciseListContainer.style.overflow = '';
+            Array.from(exerciseListContainer.children).forEach(child => {
+                child.style.transform = '';
+                child.style.transition = '';
+            });
+        };
+
+        dragHandle.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 1) return;
+            touchStartY = e.touches[0].clientY;
+            isDraggingTouch = false;
+            wasDragged = false;
+            holdTimeout = setTimeout(() => {
+                isDraggingTouch = true;
+                wasDragged = true;
+                initialIndex = parseInt(row.dataset.index);
+                draggedItemIndex = initialIndex;
+                if (navigator.vibrate) navigator.vibrate(40);
+
+                // Create ghost element that floats under finger
+                const rect = container.getBoundingClientRect();
+                touchOffsetY = touchStartY - rect.top;
+                ghostEl = container.cloneNode(true);
+                ghostEl.style.position = 'fixed';
+                ghostEl.style.left = rect.left + 'px';
+                ghostEl.style.top = rect.top + 'px';
+                ghostEl.style.width = rect.width + 'px';
+                ghostEl.style.height = rect.height + 'px';
+                ghostEl.style.margin = '0';
+                ghostEl.style.zIndex = '9999';
+                ghostEl.style.opacity = '0.9';
+                ghostEl.style.pointerEvents = 'none';
+                ghostEl.style.borderRadius = '12px';
+                ghostEl.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
+                ghostEl.style.transform = 'scale(1.04)';
+                ghostEl.style.transition = 'transform 0.1s ease';
+                document.body.appendChild(ghostEl);
+
+                // Dim the real item
+                container.style.opacity = '0.2';
+                exerciseListContainer.style.overflow = 'visible';
+            }, 100);
+        }, {passive: true});
+
+        dragHandle.addEventListener('touchmove', (e) => {
+            if (!isDraggingTouch) {
+                const touchY = e.touches[0].clientY;
+                if (Math.abs(touchY - touchStartY) > 10) clearTimeout(holdTimeout);
+                return;
+            }
+            e.preventDefault();
+            if (draggedItemIndex === null || !ghostEl) return;
+
+            const touchY = e.touches[0].clientY;
+            const touchX = e.touches[0].clientX;
+
+            // Move ghost
+            ghostEl.style.top = (touchY - touchOffsetY) + 'px';
+
+            // Find target position
+            ghostEl.style.display = 'none';
+            const element = document.elementFromPoint(touchX, touchY);
+            ghostEl.style.display = '';
+
+            let newOverIndex = draggedOverItemIndex;
+            if (element) {
+                const targetContainer = element.closest('.list-item-container');
+                if (targetContainer && targetContainer !== container) {
+                    const innerRow = targetContainer.querySelector('.list-row');
+                    if (innerRow) newOverIndex = parseInt(innerRow.dataset.index);
+                }
+            }
+
+            if (newOverIndex !== draggedOverItemIndex) {
+                draggedOverItemIndex = newOverIndex;
+
+                // Animate siblings to show insertion space
+                Array.from(exerciseListContainer.children).forEach((child, i) => {
+                    if (i === draggedItemIndex) return;
+                    child.style.transition = 'transform 0.18s ease';
+                    if (draggedOverItemIndex !== null) {
+                        const childRow = child.querySelector('.list-row');
+                        const ci = childRow ? parseInt(childRow.dataset.index) : i;
+                        // If item is in the shifted zone, nudge it
+                        if (draggedItemIndex < draggedOverItemIndex) {
+                            // Moving down: nudge items between original and target UP
+                            if (ci > draggedItemIndex && ci <= draggedOverItemIndex) {
+                                child.style.transform = 'translateY(-100%)';
+                            } else {
+                                child.style.transform = '';
+                            }
+                        } else {
+                            // Moving up: nudge items between target and original DOWN
+                            if (ci >= draggedOverItemIndex && ci < draggedItemIndex) {
+                                child.style.transform = 'translateY(100%)';
+                            } else {
+                                child.style.transform = '';
+                            }
+                        }
+                    }
+                });
+            }
+        }, {passive: false});
+
+        dragHandle.addEventListener('touchend', () => {
+            clearTimeout(holdTimeout);
+            if (!isDraggingTouch) return;
+            isDraggingTouch = false;
+
+            cleanUpDrag();
+            applyReorder();
+            setTimeout(() => { wasDragged = false; }, 100);
+        });
+
+        dragHandle.addEventListener('touchcancel', () => {
+            clearTimeout(holdTimeout);
+            if (isDraggingTouch) {
+                isDraggingTouch = false;
+                draggedItemIndex = null;
+                draggedOverItemIndex = null;
+                cleanUpDrag();
+                container.style.opacity = '1';
+            }
         });
 
         row.appendChild(btn);
-        row.appendChild(delBtn);
-        exerciseListContainer.appendChild(row);
+        row.appendChild(dragHandle);
+        
+        swipeContent.appendChild(row);
+        container.appendChild(deleteBg);
+        container.appendChild(swipeContent);
+        exerciseListContainer.appendChild(container);
     });
 }
 
@@ -538,12 +1189,114 @@ function renderWeekNavigation() {
     // Disable next button if on max week
     btnNextWeek.style.opacity = currentWeek >= maxWeek ? "0.3" : "1";
     btnNextWeek.style.pointerEvents = currentWeek >= maxWeek ? "none" : "auto";
+
+    // Hide inputs for past weeks
+    const isPastWeek = currentWeek < maxWeek;
+    const inputGroup = document.querySelector('.input-group');
+    if (inputGroup) {
+        inputGroup.style.display = isPastWeek ? 'none' : 'flex';
+    }
+    if (btnSaveSet) {
+        btnSaveSet.style.display = isPastWeek ? 'none' : 'block';
+    }
 }
 
 // Logic Functions
+
+// Resolves the canonical log key for an exercise, merging any mismatched case/accent keys on the fly
+function resolveLogKey(exerciseName) {
+    const normTarget = normalizeText(exerciseName);
+
+    // 1. Check known predefined exercises first
+    for (const cat in exercisesByCategory) {
+        for (const ex of exercisesByCategory[cat]) {
+            if (normalizeText(ex) === normTarget) return ex;
+        }
+    }
+    // 2. Check existing log keys (in case it's a custom exercise that already has data)
+    for (const logKey in currentSession.logs) {
+        if (normalizeText(logKey) === normTarget) return logKey;
+    }
+    // 3. Fallback to the name as given
+    return exerciseName;
+}
+
+async function renameExercise(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+
+    // 1. Rename in logs
+    if (currentSession.logs[oldName]) {
+        currentSession.logs[newName] = currentSession.logs[oldName];
+        delete currentSession.logs[oldName];
+    }
+
+    // 2. Rename in customDescriptions
+    if (currentSession.customDescriptions && currentSession.customDescriptions[oldName]) {
+        currentSession.customDescriptions[newName] = currentSession.customDescriptions[oldName];
+        delete currentSession.customDescriptions[oldName];
+    }
+
+    // 3. Rename in Days (customExercises, exerciseOrder)
+    if (currentSession.customExercises) {
+        for (const day in currentSession.customExercises) {
+            const idx = currentSession.customExercises[day].indexOf(oldName);
+            if (idx !== -1) currentSession.customExercises[day][idx] = newName;
+        }
+    }
+
+    if (currentSession.exerciseOrder) {
+        for (const day in currentSession.exerciseOrder) {
+            const idx = currentSession.exerciseOrder[day].indexOf(oldName);
+            if (idx !== -1) currentSession.exerciseOrder[day][idx] = newName;
+        }
+    }
+
+    // If it was a standard exercise, hide the old one and add the new one as custom
+    let isStandard = false;
+    for (const cat in exercisesByCategory) {
+        if (exercisesByCategory[cat].includes(oldName)) {
+            isStandard = true;
+            break;
+        }
+    }
+
+    if (isStandard && activeDay) {
+        if (!currentSession.hiddenExercises) currentSession.hiddenExercises = {};
+        if (!currentSession.hiddenExercises[activeDay]) currentSession.hiddenExercises[activeDay] = [];
+        if (!currentSession.hiddenExercises[activeDay].includes(oldName)) {
+            currentSession.hiddenExercises[activeDay].push(oldName);
+        }
+
+        if (!currentSession.customExercises) currentSession.customExercises = {};
+        if (!currentSession.customExercises[activeDay]) currentSession.customExercises[activeDay] = [];
+        if (!currentSession.customExercises[activeDay].includes(newName)) {
+            currentSession.customExercises[activeDay].push(newName);
+        }
+    }
+
+    activeExercise = newName;
+    currentExerciseNameEl.textContent = newName;
+    showToast('Nombre actualizado', 'success');
+    await syncSessionToFirestore();
+}
+
 function openExercise(exerciseName) {
-    activeExercise = exerciseName;
-    currentExerciseNameEl.textContent = exerciseName;
+    // Resolve canonical key
+    const canonicalName = resolveLogKey(exerciseName);
+    activeExercise = canonicalName;
+    currentExerciseNameEl.textContent = canonicalName;
+
+    // If the display name differs from canonicalName, merge logs
+    if (exerciseName !== canonicalName && currentSession.logs[exerciseName]) {
+        if (!currentSession.logs[canonicalName]) currentSession.logs[canonicalName] = {};
+        for (const week in currentSession.logs[exerciseName]) {
+            if (!currentSession.logs[canonicalName][week]) currentSession.logs[canonicalName][week] = [];
+            currentSession.logs[canonicalName][week].push(...currentSession.logs[exerciseName][week]);
+        }
+        delete currentSession.logs[exerciseName];
+        // Background save the merge
+        syncSessionToFirestore();
+    }
 
     // Initialize log structure for exercise if new
     if (!currentSession.logs[activeExercise]) {
@@ -564,6 +1317,15 @@ function openExercise(exerciseName) {
     let details = currentSession.customDescriptions[exerciseName];
     if (!details) {
         details = exerciseDetails[exerciseName];
+        if (!details) {
+            const normalizedEx = normalizeText(exerciseName);
+            for (const key in exerciseDetails) {
+                if (normalizeText(key) === normalizedEx) {
+                    details = exerciseDetails[key];
+                    break;
+                }
+            }
+        }
     }
 
     if (details) {
@@ -645,8 +1407,10 @@ function renderSets() {
     logs.forEach((log, index) => {
         const li = document.createElement('li');
         li.className = 'list-row';
+        const canEdit = currentWeek === maxWeek;
+        const deleteBtnHtml = canEdit ? `<button class="delete-set-btn" data-index="${index}" title="Borrar serie">−</button>` : '';
         li.innerHTML = `
-            <button class="delete-set-btn" data-index="${index}" title="Borrar serie">−</button>
+            ${deleteBtnHtml}
             <div class="set-item-box">
                 <span class="set-label">Serie ${index + 1}</span>
                 <span class="set-values">${log.reps} reps x ${log.weight} kg</span>
@@ -701,7 +1465,7 @@ btnAddDay.addEventListener('click', async () => {
     if (!zoneName) return;
 
     const newDayNumber = currentSession.days.length + 1;
-    const newDayName = `Día ${newDayNumber}: ${zoneName}`;
+    const newDayName = `Día ${newDayNumber} ${zoneName}`;
 
     currentSession.days.push(newDayName);
     renderDayList();
@@ -711,8 +1475,10 @@ btnAddDay.addEventListener('click', async () => {
 });
 
 btnAddExercise.addEventListener('click', async () => {
-    const exerciseName = await showModal('Nombre del nuevo ejercicio:', 'Ej: Press de Banca');
+    let exerciseName = await showModal('Nombre del nuevo ejercicio:', 'Ej: Press de Banca');
     if (!exerciseName) return;
+
+    exerciseName = exerciseName.trim();
 
     if (!currentSession.customExercises[activeDay]) {
         currentSession.customExercises[activeDay] = [];
@@ -756,6 +1522,7 @@ btnBackDays.addEventListener('click', () => {
 });
 
 btnBackExercises.addEventListener('click', () => {
+    if (activeDay) renderExerciseList(activeDay);
     showScreen(screenExercises);
 });
 
