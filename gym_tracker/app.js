@@ -97,6 +97,8 @@ const screenExercises = document.getElementById('screen-exercises');
 const screenActiveExercise = document.getElementById('screen-active-exercise');
 
 const btnLogin = document.getElementById('btn-login');
+const btnLogout = document.getElementById('btn-logout');
+const welcomeMsg = document.getElementById('welcome-msg');
 const btnStartDay = document.getElementById('btn-start-day');
 const btnBackHome = document.getElementById('btn-back-home');
 const btnBackDays = document.getElementById('btn-back-days');
@@ -1585,8 +1587,19 @@ btnLogin.addEventListener('click', async () => {
         return;
     }
     currentUserEmail = email;
+    localStorage.setItem('gymtracker_email', email);
     await loadSessionFromFirestore();
+    welcomeMsg.textContent = `Hola, ${email}`;
     showScreen(screenHome);
+});
+
+btnLogout.addEventListener('click', () => {
+    localStorage.removeItem('gymtracker_email');
+    currentUserEmail = null;
+    currentSession = { date: new Date().toISOString(), logs: {} };
+    inputEmail.value = '';
+    showScreen(screenLogin);
+    showToast('Sesión cerrada', 'info');
 });
 
 btnStartDay.addEventListener('click', () => {
@@ -1697,5 +1710,15 @@ btnNextWeek.addEventListener('click', () => {
 // btnAddWeek logic removed as weeks are now automatic based on calendar progression
 // btnAddWeek.addEventListener('click', () => { ... });
 
-// App Init - show login first
-showScreen(screenLogin);
+// App Init - auto-login if email is saved in localStorage
+const savedEmail = localStorage.getItem('gymtracker_email');
+if (savedEmail) {
+    currentUserEmail = savedEmail;
+    inputEmail.value = savedEmail;
+    loadSessionFromFirestore().then(() => {
+        welcomeMsg.textContent = `Hola, ${savedEmail}`;
+        showScreen(screenHome);
+    });
+} else {
+    showScreen(screenLogin);
+}
