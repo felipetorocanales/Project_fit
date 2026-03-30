@@ -323,8 +323,9 @@ function migrateSessionData() {
     let modified = false;
 
     // 1. Migrate Days from string[] to {id, name}[]
+    // Only convert if they're still plain strings (old format).
+    // No deduplication — two days can have the same zone name (e.g. two "Tren Superior" days).
     if (currentSession.days && currentSession.days.length > 0) {
-        // If they are still strings, migrate to objects
         if (typeof currentSession.days[0] === 'string') {
             modified = true;
             currentSession.days = currentSession.days.map(dayStr => ({
@@ -332,40 +333,36 @@ function migrateSessionData() {
                 name: stripDayPrefix(dayStr) || dayStr
             }));
         }
-        
-        // Also handle deduplication/normalization on names if needed
-        const dayMap = {};
-        const newDays = [];
-        currentSession.days.forEach(dayObj => {
-            const norm = normalizeText(dayObj.id);
-            if (!dayMap[norm]) {
-                dayMap[norm] = dayObj;
-                newDays.push(dayObj);
-            } else {
-                // Duplicate ID found, merge maps
-                const can = dayMap[norm].id;
-                const dup = dayObj.id;
-                
-                if (currentSession.customExercises && currentSession.customExercises[dup]) {
-                    if (!currentSession.customExercises[can]) currentSession.customExercises[can] = [];
-                    currentSession.customExercises[dup].forEach(ex => {
-                        if (!currentSession.customExercises[can].includes(ex)) currentSession.customExercises[can].push(ex);
-                    });
-                    delete currentSession.customExercises[dup];
-                }
-                if (currentSession.hiddenExercises && currentSession.hiddenExercises[dup]) {
-                    if (!currentSession.hiddenExercises[can]) currentSession.hiddenExercises[can] = [];
-                    currentSession.hiddenExercises[dup].forEach(ex => {
-                        if (!currentSession.hiddenExercises[can].includes(ex)) currentSession.hiddenExercises[can].push(ex);
-                    });
-                    delete currentSession.hiddenExercises[dup];
-                }
-                if (currentSession.exerciseOrder && currentSession.exerciseOrder[dup]) {
-                    delete currentSession.exerciseOrder[dup];
-                }
+    } else if (!currentSession.days) {
+        currentSession.days = [];
+    }
+
+    // 1b. Day recovery: if exercise maps have keys that are NOT in days[], rebuild them.
+    // This recovers days that were lost by a previous buggy deduplication.
+    {
+        const existingDayIds = new Set((currentSession.days || []).map(d => d.id));
+        const orphanKeys = new Set();
+
+        const scanMap = (map) => {
+            if (!map) return;
+            for (const key of Object.keys(map)) {
+                if (!existingDayIds.has(key)) orphanKeys.add(key);
             }
-        });
-        currentSession.days = newDays;
+        };
+
+        scanMap(currentSession.customExercises);
+        scanMap(currentSession.exerciseOrder);
+        scanMap(currentSession.hiddenExercises);
+
+        if (orphanKeys.size > 0) {
+            modified = true;
+            // Add orphan day keys back, ordered naturally by their prefix number
+            const recovered = Array.from(orphanKeys).sort().map(key => ({
+                id: key,
+                name: stripDayPrefix(key) || key
+            }));
+            currentSession.days = [...(currentSession.days || []), ...recovered];
+        }
     }
 
     // 2. Migrate Exercises (Logs and custom config)
@@ -927,18 +924,21 @@ function renderExerciseList(dayId) {
     const dayObj = (currentSession.days || []).find(d => d.id === dayId);
     currentDayTitleEl.textContent = dayObj ? dayObj.name : dayId;
 
-    // Find standard exercises by normalizing the name (not ID)
+    // Find standard exercises by matching the category key against the day ID.
+    // We use the full key (including number prefix) so that 'Día 1: Tren Superior'
+    // and 'Día 3: Tren Superior' each resolve to their own distinct exercise set.
     let standardExs = [];
-    const normalizedDayName = normalizeText(dayObj ? dayObj.name : dayId);
+    const normalizedDayId = normalizeText(dayId);
 
     for (const key in exercisesByCategory) {
-        // Try exact match on ID first (legacy)
+        // 1. Exact string match (dayId was already migrated to match the key exactly)
         if (key === dayId) {
             standardExs = exercisesByCategory[key];
             break;
         }
-        // Try matching by zone name only
-        if (normalizeText(stripDayPrefix(key)) === normalizedDayName) {
+        // 2. Normalize both sides (handles colon vs no-colon differences, accents, etc.)
+        //    e.g. "Día 1 Tren Superior" vs "Día 1: Tren Superior" → both become "dia 1 tren superior"
+        if (normalizeText(key) === normalizedDayId) {
             standardExs = exercisesByCategory[key];
             break;
         }
