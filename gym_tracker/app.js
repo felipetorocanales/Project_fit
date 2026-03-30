@@ -158,7 +158,7 @@ function showToast(message, type = 'info') {
 }
 
 function normalizeText(text) {
-    if (!text) return text;
+    if (!text) return '';
     return text.toString()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
@@ -166,6 +166,12 @@ function normalizeText(text) {
         .replace(/[^a-z0-9\s]/g, "")
         .replace(/\s+/g, " ")
         .trim();
+}
+
+function stripDayPrefix(dayName) {
+    if (typeof dayName !== 'string') return dayName;
+    // Matches "Día 1: Pecho", "Día 1 Pecho", "Dia 1: Pecho", etc.
+    return dayName.replace(/^(D[ií]a\s*\d+[:\s-]*)/i, '').trim();
 }
 
 // Custom Modal Prompt system
@@ -316,59 +322,50 @@ function calculateMaxWeek() {
 function migrateSessionData() {
     let modified = false;
 
-    // 1. Migrate Days
+    // 1. Migrate Days from string[] to {id, name}[]
     if (currentSession.days && currentSession.days.length > 0) {
-        const dayMap = {};
-        const newDays = [];
-
-        currentSession.days.forEach(day => {
-            const norm = normalizeText(day);
-            if (!dayMap[norm]) {
-                let canonical = day;
-                for (const key in exercisesByCategory) {
-                    if (normalizeText(key) === norm) {
-                        canonical = key;
-                        break;
-                    }
-                }
-                dayMap[norm] = { canonical, duplicates: [] };
-                newDays.push(canonical);
-            } else {
-                dayMap[norm].duplicates.push(day);
-            }
-        });
-
-        for (const norm in dayMap) {
-            const group = dayMap[norm];
-            if (group.duplicates.length > 0) {
-                modified = true;
-                const can = group.canonical;
-
-                group.duplicates.forEach(dup => {
-                    if (currentSession.customExercises && currentSession.customExercises[dup]) {
-                        if (!currentSession.customExercises[can]) currentSession.customExercises[can] = [];
-                        currentSession.customExercises[dup].forEach(ex => {
-                            if (!currentSession.customExercises[can].includes(ex)) currentSession.customExercises[can].push(ex);
-                        });
-                        delete currentSession.customExercises[dup];
-                    }
-
-                    if (currentSession.hiddenExercises && currentSession.hiddenExercises[dup]) {
-                        if (!currentSession.hiddenExercises[can]) currentSession.hiddenExercises[can] = [];
-                        currentSession.hiddenExercises[dup].forEach(ex => {
-                            if (!currentSession.hiddenExercises[can].includes(ex)) currentSession.hiddenExercises[can].push(ex);
-                        });
-                        delete currentSession.hiddenExercises[dup];
-                    }
-
-                    if (currentSession.exerciseOrder && currentSession.exerciseOrder[dup]) {
-                        delete currentSession.exerciseOrder[dup];
-                    }
-                });
-            }
+        // If they are still strings, migrate to objects
+        if (typeof currentSession.days[0] === 'string') {
+            modified = true;
+            currentSession.days = currentSession.days.map(dayStr => ({
+                id: dayStr,
+                name: stripDayPrefix(dayStr) || dayStr
+            }));
         }
         
-        if (modified) currentSession.days = newDays;
+        // Also handle deduplication/normalization on names if needed
+        const dayMap = {};
+        const newDays = [];
+        currentSession.days.forEach(dayObj => {
+            const norm = normalizeText(dayObj.id);
+            if (!dayMap[norm]) {
+                dayMap[norm] = dayObj;
+                newDays.push(dayObj);
+            } else {
+                // Duplicate ID found, merge maps
+                const can = dayMap[norm].id;
+                const dup = dayObj.id;
+                
+                if (currentSession.customExercises && currentSession.customExercises[dup]) {
+                    if (!currentSession.customExercises[can]) currentSession.customExercises[can] = [];
+                    currentSession.customExercises[dup].forEach(ex => {
+                        if (!currentSession.customExercises[can].includes(ex)) currentSession.customExercises[can].push(ex);
+                    });
+                    delete currentSession.customExercises[dup];
+                }
+                if (currentSession.hiddenExercises && currentSession.hiddenExercises[dup]) {
+                    if (!currentSession.hiddenExercises[can]) currentSession.hiddenExercises[can] = [];
+                    currentSession.hiddenExercises[dup].forEach(ex => {
+                        if (!currentSession.hiddenExercises[can].includes(ex)) currentSession.hiddenExercises[can].push(ex);
+                    });
+                    delete currentSession.hiddenExercises[dup];
+                }
+                if (currentSession.exerciseOrder && currentSession.exerciseOrder[dup]) {
+                    delete currentSession.exerciseOrder[dup];
+                }
+            }
+        });
+        currentSession.days = newDays;
     }
 
     // 2. Migrate Exercises (Logs and custom config)
@@ -663,7 +660,6 @@ function renderConsistencyTracker() {
     }
 }
 
-// Initialize Day List
 function renderDayList() {
     dayListContainer.innerHTML = '';
 
@@ -676,7 +672,28 @@ function renderDayList() {
         return;
     }
 
-    currentSession.days.forEach((day, index) => {
+    let draggedDayIndex = null;
+    let draggedOverDayIndex = null;
+
+    const applyDayReorder = async () => {
+        if (draggedDayIndex === null || draggedOverDayIndex === null || draggedDayIndex === draggedOverDayIndex) {
+            draggedDayIndex = null;
+            draggedOverDayIndex = null;
+            return;
+        }
+        const itemToMove = currentSession.days.splice(draggedDayIndex, 1)[0];
+        currentSession.days.splice(draggedOverDayIndex, 0, itemToMove);
+        
+        draggedDayIndex = null;
+        draggedOverDayIndex = null;
+        renderDayList();
+        await syncSessionToFirestore();
+    };
+
+    currentSession.days.forEach((dayObj, index) => {
+        const dayId = dayObj.id;
+        const dayName = dayObj.name;
+
         // Container
         const container = document.createElement('div');
         container.className = 'list-item-container';
@@ -693,20 +710,44 @@ function renderDayList() {
         const row = document.createElement('div');
         row.className = 'list-row';
         row.style.width = '100%';
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.dataset.index = index;
+
+        // Drag Handle
+        let wasDayDragged = false;
+        const dragHandle = document.createElement('div');
+        dragHandle.innerHTML = '≡';
+        dragHandle.style.cursor = 'grab';
+        dragHandle.style.color = 'rgba(255,255,255,0.35)';
+        dragHandle.style.fontSize = '2rem';
+        dragHandle.style.padding = '0.5rem 1.2rem';
+        dragHandle.style.userSelect = 'none';
+        dragHandle.style.touchAction = 'none';
+        dragHandle.draggable = true;
 
         const btn = document.createElement('button');
         btn.className = 'day-btn';
-        btn.textContent = day;
-        btn.style.margin = '0'; // overridden by flex
+        btn.style.flexGrow = '1';
+        btn.style.textAlign = 'left';
+        btn.style.background = 'transparent';
+        btn.style.border = 'none';
+        btn.style.padding = '1rem';
+        btn.innerHTML = `<span style="color:var(--accent); font-weight:800; margin-right:8px;">DÍA ${index + 1}</span> <span>${dayName}</span>`;
+        
         btn.addEventListener('click', () => {
-            activeDay = day;
+            if (wasDayDragged) {
+                wasDayDragged = false;
+                return;
+            }
+            activeDay = dayId;
             currentSession.date = new Date().toISOString();
             renderExerciseList(activeDay);
             showScreen(screenExercises);
         });
 
         const performDelete = async () => {
-            const confirmed = await showConfirm(`¿Estás seguro de que deseas eliminar <strong>"${day}"</strong>?<br><br><span style="color:var(--accent); font-size:0.9rem;">⚠️ ADVERTENCIA: Se borrará toda la historia de las series acumulada en este día.</span>`);
+            const confirmed = await showConfirm(`¿Estás seguro de que deseas eliminar <strong>"${dayName}"</strong>?<br><br><span style="color:var(--accent); font-size:0.9rem;">⚠️ ADVERTENCIA: Se borrará toda la historia de las series acumulada en este día.</span>`);
             if (!confirmed) {
                 swipeContent.style.transform = `translateX(0)`;
                 return;
@@ -714,60 +755,44 @@ function renderDayList() {
 
             currentSession.days.splice(index, 1);
             
-            // Clean up dependent data just in case
-            if(currentSession.customExercises && currentSession.customExercises[day]) {
-                delete currentSession.customExercises[day];
-            }
-            if(currentSession.hiddenExercises && currentSession.hiddenExercises[day]) {
-                delete currentSession.hiddenExercises[day];
-            }
-            if(currentSession.exerciseOrder && currentSession.exerciseOrder[day]) {
-                delete currentSession.exerciseOrder[day];
-            }
+            // Clean up dependent data
+            if(currentSession.customExercises?.[dayId]) delete currentSession.customExercises[dayId];
+            if(currentSession.hiddenExercises?.[dayId]) delete currentSession.hiddenExercises[dayId];
+            if(currentSession.exerciseOrder?.[dayId]) delete currentSession.exerciseOrder[dayId];
 
             renderDayList();
             showToast('🗑 Día eliminado', 'error');
             await syncSessionToFirestore();
         };
 
-        // Swipe events
+        // Swipe events for Day Delete
         let startX = 0;
         let currentX = 0;
-        let isDragging = false;
+        let isSwiping = false;
         
         swipeContent.addEventListener('pointerdown', (e) => {
-            // Only care about main button or touch
             if(e.button !== 0 && e.pointerType === 'mouse') return;
-            isDragging = true;
+            isSwiping = true;
             startX = e.clientX;
             swipeContent.style.transition = 'none';
         });
 
         swipeContent.addEventListener('pointermove', (e) => {
-            if (!isDragging) return;
+            if (!isSwiping) return;
             currentX = e.clientX;
-            let diff = currentX - startX;
-            if (diff < 0) diff = 0; // only swipe right
-
-            // add resistance
-            if (diff > 150) {
-                diff = 150 + (diff - 150) * 0.2;
-            }
+            let diff = Math.max(0, currentX - startX);
+            if (diff > 150) diff = 150 + (diff - 150) * 0.2;
             swipeContent.style.transform = `translateX(${diff}px)`;
         });
 
         const endSwipe = () => {
-            if (!isDragging) return;
-            isDragging = false;
+            if (!isSwiping) return;
+            isSwiping = false;
             swipeContent.style.transition = 'transform 0.3s ease-out';
-            
-            let diff = currentX - startX;
-            if (diff > 120) {
-                // Trigger Delete
+            if (currentX - startX > 120) {
                 swipeContent.style.transform = `translateX(100%)`;
-                setTimeout(performDelete, 300); // Wait for animation
+                setTimeout(performDelete, 300);
             } else {
-                // Snap back
                 swipeContent.style.transform = `translateX(0)`;
             }
         };
@@ -776,7 +801,118 @@ function renderDayList() {
         swipeContent.addEventListener('pointercancel', endSwipe);
         swipeContent.addEventListener('pointerleave', endSwipe);
 
+        // Smooth Drag and Drop for Days
+        let touchStartY = 0;
+        let holdTimeout = null;
+        let isDraggingTouch = false;
+        let ghostEl = null;
+        let touchOffsetY = 0;
+
+        const cleanUpDayDrag = () => {
+            if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+            container.style.opacity = '1';
+            dayListContainer.style.overflow = '';
+            Array.from(dayListContainer.children).forEach(child => {
+                child.style.transform = '';
+                child.style.transition = '';
+            });
+        };
+
+        dragHandle.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 1) return;
+            touchStartY = e.touches[0].clientY;
+            holdTimeout = setTimeout(() => {
+                isDraggingTouch = true;
+                wasDayDragged = true;
+                draggedDayIndex = index;
+                if (navigator.vibrate) navigator.vibrate(40);
+
+                const rect = container.getBoundingClientRect();
+                touchOffsetY = touchStartY - rect.top;
+                ghostEl = container.cloneNode(true);
+                ghostEl.style.position = 'fixed';
+                ghostEl.style.left = rect.left + 'px';
+                ghostEl.style.top = rect.top + 'px';
+                ghostEl.style.width = rect.width + 'px';
+                ghostEl.style.zIndex = '9999';
+                ghostEl.style.opacity = '0.9';
+                ghostEl.style.pointerEvents = 'none';
+                ghostEl.style.boxShadow = '0 8px 32px rgba(0,0,0,0.5)';
+                ghostEl.style.transform = 'scale(1.04)';
+                document.body.appendChild(ghostEl);
+
+                container.style.opacity = '0.2';
+            }, 100);
+        }, {passive: true});
+
+        dragHandle.addEventListener('touchmove', (e) => {
+            if (!isDraggingTouch) {
+                if (Math.abs(e.touches[0].clientY - touchStartY) > 10) clearTimeout(holdTimeout);
+                return;
+            }
+            e.preventDefault();
+            const touchY = e.touches[0].clientY;
+            ghostEl.style.top = (touchY - touchOffsetY) + 'px';
+
+            ghostEl.style.display = 'none';
+            const element = document.elementFromPoint(e.touches[0].clientX, touchY);
+            ghostEl.style.display = '';
+
+            let newOverIndex = draggedOverDayIndex;
+            if (element) {
+                const targetContainer = element.closest('.list-item-container');
+                if (targetContainer && targetContainer !== container) {
+                    const rowEl = targetContainer.querySelector('.list-row');
+                    if (rowEl) newOverIndex = parseInt(rowEl.dataset.index);
+                }
+            }
+
+            if (newOverIndex !== draggedOverDayIndex) {
+                draggedOverDayIndex = newOverIndex;
+                Array.from(dayListContainer.children).forEach((child, i) => {
+                    if (i === draggedDayIndex) return;
+                    child.style.transition = 'transform 0.18s ease';
+                    const childRow = child.querySelector('.list-row');
+                    const ci = childRow ? parseInt(childRow.dataset.index) : i;
+                    if (draggedDayIndex < draggedOverDayIndex) {
+                        child.style.transform = (ci > draggedDayIndex && ci <= draggedOverDayIndex) ? 'translateY(-100%)' : '';
+                    } else {
+                        child.style.transform = (ci >= draggedOverDayIndex && ci < draggedDayIndex) ? 'translateY(100%)' : '';
+                    }
+                });
+            }
+        }, {passive: false});
+
+        dragHandle.addEventListener('touchend', () => {
+            clearTimeout(holdTimeout);
+            if (!isDraggingTouch) return;
+            isDraggingTouch = false;
+            cleanUpDayDrag();
+            applyDayReorder();
+            setTimeout(() => { wasDayDragged = false; }, 100);
+        });
+
+        // Mouse Drag (simple reorder logic)
+        dragHandle.addEventListener('dragstart', (e) => {
+            draggedDayIndex = index;
+            container.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = "move";
+            const rect = container.getBoundingClientRect();
+            e.dataTransfer.setDragImage(container, e.clientX - rect.left, e.clientY - rect.top);
+        });
+
+        row.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            draggedOverDayIndex = index;
+        });
+
+        row.addEventListener('dragend', () => {
+            container.style.opacity = '1';
+            applyDayReorder();
+        });
+
         row.appendChild(btn);
+        row.appendChild(dragHandle);
         swipeContent.appendChild(row);
         container.appendChild(deleteBg);
         container.appendChild(swipeContent);
@@ -785,21 +921,31 @@ function renderDayList() {
 }
 
 // Initialize Exercise List for a specific day
-function renderExerciseList(dayCategory) {
+function renderExerciseList(dayId) {
     exerciseListContainer.innerHTML = '';
-    currentDayTitleEl.textContent = dayCategory;
+    
+    const dayObj = (currentSession.days || []).find(d => d.id === dayId);
+    currentDayTitleEl.textContent = dayObj ? dayObj.name : dayId;
 
-    // Find standard exercises by normalizing the keys
+    // Find standard exercises by normalizing the name (not ID)
     let standardExs = [];
-    const normalizedDayCat = normalizeText(dayCategory);
+    const normalizedDayName = normalizeText(dayObj ? dayObj.name : dayId);
+
     for (const key in exercisesByCategory) {
-        if (normalizeText(key) === normalizedDayCat) {
+        // Try exact match on ID first (legacy)
+        if (key === dayId) {
+            standardExs = exercisesByCategory[key];
+            break;
+        }
+        // Try matching by zone name only
+        if (normalizeText(stripDayPrefix(key)) === normalizedDayName) {
             standardExs = exercisesByCategory[key];
             break;
         }
     }
-    const hidden = currentSession.hiddenExercises?.[dayCategory] || [];
-    const customExs = currentSession.customExercises[dayCategory] || [];
+
+    const hidden = currentSession.hiddenExercises?.[dayId] || [];
+    const customExs = currentSession.customExercises[dayId] || [];
     let allExercises = [
         ...standardExs.filter(e => !hidden.includes(e)),
         ...customExs
@@ -807,8 +953,8 @@ function renderExerciseList(dayCategory) {
 
     // Read saved order if it exists, use it to sort
     if (!currentSession.exerciseOrder) currentSession.exerciseOrder = {};
-    if (currentSession.exerciseOrder[dayCategory]) {
-        const orderArray = currentSession.exerciseOrder[dayCategory];
+    if (currentSession.exerciseOrder[dayId]) {
+        const orderArray = currentSession.exerciseOrder[dayId];
         allExercises.sort((a, b) => {
             let indexA = orderArray.indexOf(a);
             let indexB = orderArray.indexOf(b);
@@ -820,7 +966,7 @@ function renderExerciseList(dayCategory) {
     }
 
     // Save current active list order for potential moves later
-    currentSession.exerciseOrder[dayCategory] = [...allExercises];
+    currentSession.exerciseOrder[dayId] = [...allExercises];
 
     if (allExercises.length === 0) {
         exerciseListContainer.innerHTML = `
@@ -903,15 +1049,15 @@ function renderExerciseList(dayCategory) {
             }
 
             if (isCustom) {
-                const customList = currentSession.customExercises[dayCategory];
+                const customList = currentSession.customExercises[dayId];
                 const customIndex = customList.indexOf(ex);
                 if (customIndex > -1) customList.splice(customIndex, 1);
             } else {
                 if (!currentSession.hiddenExercises) currentSession.hiddenExercises = {};
-                if (!currentSession.hiddenExercises[dayCategory]) currentSession.hiddenExercises[dayCategory] = [];
-                currentSession.hiddenExercises[dayCategory].push(ex);
+                if (!currentSession.hiddenExercises[dayId]) currentSession.hiddenExercises[dayId] = [];
+                currentSession.hiddenExercises[dayId].push(ex);
             }
-            const activeOrder = currentSession.exerciseOrder && currentSession.exerciseOrder[dayCategory];
+            const activeOrder = currentSession.exerciseOrder && currentSession.exerciseOrder[dayId];
             if (activeOrder) {
                 const orderIdx = activeOrder.indexOf(ex);
                 if (orderIdx > -1) activeOrder.splice(orderIdx, 1);
@@ -919,7 +1065,7 @@ function renderExerciseList(dayCategory) {
             
             // Note: We don't delete logs so history works, just hide the exercise
 
-            renderExerciseList(dayCategory);
+            renderExerciseList(dayId);
             showToast('🗑 Ejercicio eliminado', 'error');
             await syncSessionToFirestore();
         };
@@ -981,13 +1127,13 @@ function renderExerciseList(dayCategory) {
                 });
                 return;
             }
-            const list = currentSession.exerciseOrder[dayCategory];
+            const list = currentSession.exerciseOrder[dayId];
             const itemToMove = list.splice(draggedItemIndex, 1)[0];
             list.splice(draggedOverItemIndex, 0, itemToMove);
             
             draggedItemIndex = null;
             draggedOverItemIndex = null;
-            renderExerciseList(dayCategory);
+            renderExerciseList(dayId);
             await syncSessionToFirestore();
         };
 
@@ -1118,7 +1264,7 @@ function renderExerciseList(dayCategory) {
             }
 
             if (newOverIndex !== draggedOverItemIndex) {
-                draggedOverItemIndex = newOverIndex;
+                draggedOverIndex = newOverIndex;
 
                 // Animate siblings to show insertion space
                 Array.from(exerciseListContainer.children).forEach((child, i) => {
@@ -1464,12 +1610,16 @@ btnAddDay.addEventListener('click', async () => {
     const zoneName = await showModal('¿Qué zona trabajarás en este nuevo día?', 'Ej: Pecho y Tríceps');
     if (!zoneName) return;
 
-    const newDayNumber = currentSession.days.length + 1;
-    const newDayName = `Día ${newDayNumber} ${zoneName}`;
+    // Use a unique ID based on timestamp
+    const dayId = `day_${Date.now()}`;
+    const newDayObj = {
+        id: dayId,
+        name: zoneName.trim()
+    };
 
-    currentSession.days.push(newDayName);
+    currentSession.days.push(newDayObj);
     renderDayList();
-    showToast(`✅ ${newDayName} agregado`, 'success');
+    showToast(`✅ Día ${currentSession.days.length} agregado`, 'success');
 
     await syncSessionToFirestore();
 });
