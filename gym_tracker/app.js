@@ -226,16 +226,16 @@ function showModal(label, placeholder = '') {
     });
 }
 
-function showConfirm(labelHtml) {
+function showConfirm(labelHtml, confirmLabel = 'Eliminar', confirmColor = '#ef4444') {
     return new Promise((resolve) => {
         modalLabel.innerHTML = labelHtml;
         modalInput.style.display = 'none'; // Hide input for purely confirm dialogs
         modalOverlay.classList.remove('hidden');
         
-        // Change confirm button color to red for deletions
+        // Style the confirm button
         const originalBg = modalConfirm.style.background;
-        modalConfirm.style.background = '#ef4444';
-        modalConfirm.textContent = 'Eliminar';
+        modalConfirm.style.background = confirmColor;
+        modalConfirm.textContent = confirmLabel;
 
         function onConfirm() {
             cleanup();
@@ -568,9 +568,8 @@ function renderConsistencyTracker() {
             return dt >= weekMonday && dt <= weekSunday;
         }).length;
 
-        // Met goal if: new system has enough dates OR old system has logs
-        // (Old system doesn't know 'days', so we use a heuristic: if they have logs, they worked)
-        if (trainedDaysCount >= goalPerWeek || (trainedDaysCount === 0 && exercisesInWeek >= goalPerWeek)) {
+        // Met goal if: new system has enough dates
+        if (trainedDaysCount >= goalPerWeek) {
             metGoal = true;
         }
 
@@ -607,20 +606,14 @@ function renderConsistencyTracker() {
             return dt >= weekMonday && dt <= weekSun;
         });
 
-        // Fallback for logs-based history
-        let exercisesInWeek = 0;
-        Object.values(currentSession.logs).forEach(exLogs => {
-            if (exLogs[w] && exLogs[w].length > 0) exercisesInWeek++;
-        });
-
-        const displayCount = Math.max(trainedDaysInWeek.length, (trainedDaysInWeek.length === 0 && exercisesInWeek > 0) ? goalPerWeek : 0);
+        const displayCount = trainedDaysInWeek.length;
         const isGoalMet = displayCount >= goalPerWeek;
 
         let gridHtml = '';
         for (let i = 0; i < 7; i++) {
             const d = new Date(weekMonday);
             d.setDate(weekMonday.getDate() + i);
-            const dateStr = d.toISOString().split('T')[0];
+            const dateStr = d.toLocaleDateString('sv-SE');
             const isActive = trainingDates.includes(dateStr);
             const isDayToday = dateStr === todayStr;
 
@@ -1266,7 +1259,7 @@ function renderExerciseList(dayId) {
             }
 
             if (newOverIndex !== draggedOverItemIndex) {
-                draggedOverIndex = newOverIndex;
+                draggedOverItemIndex = newOverIndex;
 
                 // Animate siblings to show insertion space
                 Array.from(exerciseListContainer.children).forEach((child, i) => {
@@ -1586,6 +1579,21 @@ btnLogin.addEventListener('click', async () => {
         showToast('Por favor ingresa un correo electrónico válido.', 'error');
         return;
     }
+
+    // Check if user already exists in Firestore
+    const docRef = doc(db, "workouts", email);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+        // New user — ask confirmation
+        const confirmed = await showConfirm(
+            `El correo <strong>${email}</strong> no está registrado.<br><br>¿Deseas crear una cuenta nueva?`,
+            'Crear cuenta',
+            'var(--primary)'
+        );
+        if (!confirmed) return;
+    }
+
     currentUserEmail = email;
     localStorage.setItem('gymtracker_email', email);
     await loadSessionFromFirestore();
