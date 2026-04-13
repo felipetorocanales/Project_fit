@@ -88,6 +88,8 @@ let activeExercise = null;
 let activeDay = null;
 let currentWeek = 1;
 let maxWeek = 1;
+let volumeChartInstance = null;
+let currentChartType = 'volume';
 
 // DOM Elements
 const screenLogin = document.getElementById('screen-login');
@@ -95,6 +97,7 @@ const screenHome = document.getElementById('screen-home');
 const screenSelectDay = document.getElementById('screen-select-day');
 const screenExercises = document.getElementById('screen-exercises');
 const screenActiveExercise = document.getElementById('screen-active-exercise');
+const screenChart = document.getElementById('screen-chart');
 
 const btnLogin = document.getElementById('btn-login');
 const btnLogout = document.getElementById('btn-logout');
@@ -104,6 +107,11 @@ const btnBackHome = document.getElementById('btn-back-home');
 const btnBackDays = document.getElementById('btn-back-days');
 const btnBackExercises = document.getElementById('btn-back-exercises');
 const btnSaveSet = document.getElementById('btn-save-set');
+const btnShowChart = document.getElementById('btn-show-chart');
+const btnBackActiveExercise = document.getElementById('btn-back-active-exercise');
+const noChartDataMsg = document.getElementById('no-chart-data-msg');
+const btnTabVolume = document.getElementById('btn-tab-volume');
+const btnTab1rm = document.getElementById('btn-tab-1rm');
 
 const inputEmail = document.getElementById('input-email');
 const dayListContainer = document.getElementById('day-list');
@@ -281,6 +289,7 @@ function showScreen(screen) {
     screenSelectDay.classList.add('hidden');
     screenExercises.classList.add('hidden');
     screenActiveExercise.classList.add('hidden');
+    screenChart.classList.add('hidden');
     screen.classList.remove('hidden');
 
     if (screen === screenHome) {
@@ -475,6 +484,7 @@ async function loadSessionFromFirestore() {
             if (!currentSession.customExercises) currentSession.customExercises = {};
             if (!currentSession.customDescriptions) currentSession.customDescriptions = {};
             if (!currentSession.trainingDates) currentSession.trainingDates = [];
+            if (!currentSession.sessionDates) currentSession.sessionDates = {}; // { dayId: { week: 'YYYY-MM-DD' } }
             if (!currentSession.registrationDate) {
                 currentSession.registrationDate = currentSession.date || new Date().toISOString();
             }
@@ -498,6 +508,7 @@ async function loadSessionFromFirestore() {
                 customExercises: {},
                 customDescriptions: {},
                 trainingDates: [],
+                sessionDates: {}, // { dayId: { week: 'YYYY-MM-DD' } }
                 days: []
             };
             maxWeek = 1;
@@ -1487,6 +1498,7 @@ function openExercise(exerciseName) {
     inputReps.value = '';
 
     renderSets();
+    renderVolumeChart();
     showScreen(screenActiveExercise);
 }
 
@@ -1518,14 +1530,33 @@ function saveSet() {
 
     currentSession.logs[activeExercise][currentWeek].push({ weight, reps });
     renderSets();
+    renderVolumeChart();
     showToast(`✅ Serie guardada: ${reps} reps x ${weight} kg`, 'success');
 
-    // Record training date if not already recorded today
-    const now = new Date();
-    const todayStr = now.toLocaleDateString('sv-SE'); // YYYY-MM-DD in local time
-    if (!currentSession.trainingDates) currentSession.trainingDates = [];
-    if (!currentSession.trainingDates.includes(todayStr)) {
-        currentSession.trainingDates.push(todayStr);
+    // Determinar si esta es una sesión nueva o una edición de un día ya realizado.
+    // Se guarda en sessionDates[dayId][semana] la fecha en que se inició ese día de
+    // entrenamiento por primera vez. Si esa fecha es distinta a hoy, el usuario
+    // está corrigiendo datos pasados y NO se debe marcar hoy como día entrenado.
+    const todayStr = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD en hora local
+    if (!currentSession.sessionDates) currentSession.sessionDates = {};
+    if (!currentSession.sessionDates[activeDay]) currentSession.sessionDates[activeDay] = {};
+
+    const weekKey = String(currentWeek);
+    const daySessionDate = currentSession.sessionDates[activeDay][weekKey];
+
+    if (!daySessionDate) {
+        // Primera vez que se guarda una serie para este día+semana → sesión real, registrar fecha
+        currentSession.sessionDates[activeDay][weekKey] = todayStr;
+    }
+
+    // Solo marcar hoy en trainingDates si este día+semana fue iniciado HOY.
+    // Si fue iniciado en una fecha anterior, es una edición retroactiva.
+    const isNewSession = !daySessionDate || daySessionDate === todayStr;
+    if (isNewSession) {
+        if (!currentSession.trainingDates) currentSession.trainingDates = [];
+        if (!currentSession.trainingDates.includes(todayStr)) {
+            currentSession.trainingDates.push(todayStr);
+        }
     }
 
     // Save to Firestore
@@ -1566,9 +1597,143 @@ function renderSets() {
             const i = parseInt(e.currentTarget.getAttribute('data-index'));
             currentSession.logs[activeExercise][currentWeek].splice(i, 1);
             renderSets();
+            renderVolumeChart();
             showToast('🗑 Serie eliminada', 'error');
             await syncSessionToFirestore();
         });
+    });
+}
+
+function renderVolumeChart() {
+    const chartContainer = document.getElementById('volume-chart-container');
+    const ctx = document.getElementById('volumeChart');
+    if (!ctx || !chartContainer) return;
+
+    if (!currentSession.logs[activeExercise]) {
+        chartContainer.style.display = 'none';
+        if (noChartDataMsg) noChartDataMsg.style.display = 'block';
+        return;
+    }
+
+    const labels = [];
+    const dataPoints = [];
+
+    // maxWeek is dynamic calculated above
+    let hasData = false;
+    for (let w = 1; w <= maxWeek; w++) {
+        labels.push(`Sem ${w}`);
+        const logs = currentSession.logs[activeExercise][w] || [];
+        
+        let value = 0;
+        
+        if (currentChartType === 'volume') {
+            logs.forEach(log => {
+                value += (Number(log.reps) * Number(log.weight));
+            });
+        } else if (currentChartType === '1rm') {
+            logs.forEach(log => {
+                const rep = Number(log.reps);
+                const weight = Number(log.weight);
+                if (rep > 0) {
+                    const estimated1RM = weight * (1 + (rep / 30));
+                    if (estimated1RM > value) {
+                        value = estimated1RM;
+                    }
+                }
+            });
+            value = Math.round(value * 10) / 10; // Redondear a 1 decimal
+        }
+        
+        dataPoints.push(value);
+        if (logs.length > 0) hasData = true;
+    }
+
+    if (!hasData) {
+        chartContainer.style.display = 'none';
+        if (noChartDataMsg) noChartDataMsg.style.display = 'block';
+        return;
+    }
+    
+    chartContainer.style.display = 'block';
+    if (noChartDataMsg) noChartDataMsg.style.display = 'none';
+
+    if (volumeChartInstance) {
+        volumeChartInstance.destroy();
+    }
+
+    // Chart.js default aesthetic adjustments
+    Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
+    Chart.defaults.font.family = "'Outfit', sans-serif";
+
+    let chartColor = '#3b82f6';
+    let chartBgColor = 'rgba(59, 130, 246, 0.2)';
+    let chartLabel = 'Volumen (kg)';
+    
+    if (currentChartType === '1rm') {
+        chartColor = '#8b5cf6'; // Morado
+        chartBgColor = 'rgba(139, 92, 246, 0.2)';
+        chartLabel = '1RM Estimado (kg)';
+    }
+
+    volumeChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: chartLabel,
+                data: dataPoints,
+                borderColor: chartColor,
+                backgroundColor: chartBgColor,
+                borderWidth: 3,
+                pointBackgroundColor: '#fff',
+                pointBorderColor: chartColor,
+                pointHoverBackgroundColor: chartColor,
+                pointHoverBorderColor: '#fff',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: true,
+                tension: 0.4 // Smooth curve
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false // We use the container title or keep it clean
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    titleFont: { size: 13 },
+                    bodyFont: { size: 14, weight: 'bold' },
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function(context) {
+                            return context.parsed.y + ' kg';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        drawBorder: false,
+                    },
+                    border: { display: false }
+                },
+                x: {
+                    grid: {
+                        display: false,
+                        drawBorder: false,
+                    },
+                    border: { display: false }
+                }
+            }
+        }
     });
 }
 
@@ -1713,6 +1878,31 @@ btnNextWeek.addEventListener('click', () => {
         renderWeekNavigation();
         renderSets();
     }
+});
+
+btnShowChart.addEventListener('click', () => {
+    showScreen(screenChart);
+    renderVolumeChart();
+});
+
+btnTabVolume.addEventListener('click', () => {
+    if (currentChartType === 'volume') return;
+    currentChartType = 'volume';
+    btnTabVolume.classList.add('active');
+    btnTab1rm.classList.remove('active');
+    renderVolumeChart();
+});
+
+btnTab1rm.addEventListener('click', () => {
+    if (currentChartType === '1rm') return;
+    currentChartType = '1rm';
+    btnTab1rm.classList.add('active');
+    btnTabVolume.classList.remove('active');
+    renderVolumeChart();
+});
+
+btnBackActiveExercise.addEventListener('click', () => {
+    showScreen(screenActiveExercise);
 });
 
 // btnAddWeek logic removed as weeks are now automatic based on calendar progression

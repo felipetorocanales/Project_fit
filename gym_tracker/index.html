@@ -11,6 +11,7 @@
     <meta http-equiv="Expires" content="0">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=5.1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -62,7 +63,10 @@
         <!-- Screen 3: Active Exercise Log -->
         <div id="screen-active-exercise" class="screen hidden">
             <button id="btn-back-exercises" class="btn-icon">← Volver</button>
-            <h2 id="current-exercise-name">Ejercicio</h2>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+                <h2 id="current-exercise-name" style="margin-bottom: 0;">Ejercicio</h2>
+                <button id="btn-show-chart" class="fab-btn" style="position: relative; top: 0; right: 0; width: 40px; height: 40px; font-size: 1.2rem;">📊</button>
+            </div>
 
             <div class="exercise-description" id="exercise-description" style="position: relative;">
                 <button id="btn-edit-desc" class="edit-btn">✎</button>
@@ -99,6 +103,22 @@
             <ul class="sets-log" id="sets-list">
                 <!-- populated by JS -->
             </ul>
+        </div>
+
+        <!-- Screen 4: Chart View -->
+        <div id="screen-chart" class="screen hidden">
+            <button id="btn-back-active-exercise" class="btn-icon">← Volver al Ejercicio</button>
+            <h2 style="margin-bottom: 1rem;">Análisis de Progreso</h2>
+            
+            <div class="chart-tabs">
+                <button id="btn-tab-volume" class="chart-tab active">Volumen</button>
+                <button id="btn-tab-1rm" class="chart-tab">Fuerza 1RM</button>
+            </div>
+
+            <div class="chart-container" id="volume-chart-container" style="display: none; flex: 1; min-height: 300px;">
+                <canvas id="volumeChart"></canvas>
+            </div>
+            <p id="no-chart-data-msg" style="display: none; text-align: center; margin-top: 2rem;">Aún no hay suficientes datos para graficar.</p>
         </div>
 
     </div>
