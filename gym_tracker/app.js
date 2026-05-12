@@ -1,5 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, fetchSignInMethodsForEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 // TODO: Reemplaza esto con la configuración de tu proyecto en la consola de Firebase
 const firebaseConfig = {
@@ -15,71 +16,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
-// Exercises extracted from Excel, categorized by Training Day
-const exercisesByCategory = {
-    "Día 1: Tren Superior": [
-        "Jalón en Polea Alta Prono",
-        "Remo en polea con rodilla en el piso",
-        "Deltoide posterior mancuernas",
-        "Elevaciones Laterales Mancuernas",
-        "Press inclinado en smith",
-        "Press pecho en maquina",
-        "Press militar en maquina",
-        "Curl biceps en polea alta unilateral",
-        "Extensión triceps polea unilateral"
-    ],
-    "Día 2: Tren Inferior Piernas": [
-        "Aducción en Maquina",
-        "Curl Isquios Sentado en Maquina",
-        "Extensión Cuadriceps en Maquina",
-        "Sentadilla en smith",
-        "Peso Muerto Rumano con Mancuernas",
-        "Crunch Polea o Maquina"
-    ],
-    "Día 3: Tren Superior": [
-        "Elevaciones Laterales en polea",
-        "Apertura en maquina unilateral",
-        "Press inclinado con mancuernas",
-        "Press militar con mancuernas",
-        "Press frances",
-        "Remo con mancuernas",
-        "Remo en maquina con agarre neutro",
-        "Curl biceps bayesian",
-        "Curl biceps con barra prono"
-    ]
-};
-
-const exerciseDetails = {
-    "Jalón en Polea Alta Prono": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Remo en polea con rodilla en el piso": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Deltoide posterior mancuernas": { "trabajo": "2 series x 6-10 reps", "intensidad": "Fallo" },
-    "Elevaciones Laterales Mancuernas": { "trabajo": "1 serie x 6 - 10 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Press inclinado en smith": { "trabajo": "1 serie x 6 - 10 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Press pecho en maquina": { "trabajo": "1 serie x 6 - 10 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Press militar en maquina": { "trabajo": "1 serie x 6 - 10 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Curl biceps en polea alta unilateral": { "trabajo": "1 serie x 6 - 10 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Extensión triceps polea unilateral": { "trabajo": "1 serie x 6 - 10 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Aducción en Maquina": { "trabajo": "1 serie x 6 - 15 reps\n1 serie x 1 - 6 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nGuradar 5 a 10 reps\nFallo" },
-    "Curl Isquios Sentado en Maquina": { "trabajo": "1 serie x 6 - 15 reps\n1 serie x 1 - 6 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nGuradar 5 a 10 reps\nFallo" },
-    "Extensión Cuadriceps en Maquina": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Sentadilla en smith": { "trabajo": "2 serie x 1 - 6 reps\n2 series x 6-10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Peso Muerto Rumano con Mancuernas": { "trabajo": "2 serie x 1 - 6 reps\n2 series x 4 - 8 reps", "intensidad": "Guradar 5 a 10 reps\nGuradar 1 a 2 reps" },
-    "Crunch Polea o Maquina": { "trabajo": "1 serie x 1 - 6 reps\n3 series x 6 -10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Elevaciones Laterales en polea": { "trabajo": "1 serie x 10 - 15 reps\n2 series x 10 - 15 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Apertura en maquina unilateral": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 10 - 15 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Press inclinado con mancuernas": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 9 - 12 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Press militar con mancuernas": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 9 - 12 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Press frances": { "trabajo": "2 series x 10 - 15 reps", "intensidad": "Fallo" },
-    "Remo con mancuernas": { "trabajo": "1 serie x 1 - 6 reps\n2 series x 6 - 10 reps", "intensidad": "Guradar 5 a 10 reps\nFallo" },
-    "Remo en maquina con agarre neutro": { "trabajo": "2 series x 9 - 12 reps", "intensidad": "Fallo" },
-    "Curl biceps bayesian": { "trabajo": "2 series x 10 - 15 reps", "intensidad": "Fallo" },
-    "Curl biceps con barra prono": { "trabajo": "2 series x 6 - 10 reps", "intensidad": "Fallo" }
-};
 
 
 // App State
-let currentUserEmail = null;
+let currentUserId = null;
 let currentSession = {
     date: new Date().toISOString(),
     logs: {} // { "exerciseName": { 1: [ { reps, weight } ], 2: [ ... ] } }
@@ -89,9 +31,15 @@ let activeDay = null;
 let currentWeek = 1;
 let maxWeek = 1;
 let volumeChartInstance = null;
+let globalChartInstance = null;
 let currentChartType = 'volume';
+let currentTimeUnit = 'week';
+let globalTimeUnit = 'week';
+let isNavigatingFromAI = false;
+let lastWeekAnalyzed = null;
 
 // DOM Elements
+const splashScreen = document.getElementById('splash-screen');
 const screenLogin = document.getElementById('screen-login');
 const screenHome = document.getElementById('screen-home');
 const screenSelectDay = document.getElementById('screen-select-day');
@@ -112,6 +60,14 @@ const btnBackActiveExercise = document.getElementById('btn-back-active-exercise'
 const noChartDataMsg = document.getElementById('no-chart-data-msg');
 const btnTabVolume = document.getElementById('btn-tab-volume');
 const btnTab1rm = document.getElementById('btn-tab-1rm');
+const btnTabWeek = document.getElementById('btn-tab-week');
+const btnTabMonth = document.getElementById('btn-tab-month');
+const btnGlobalWeek = document.getElementById('btn-global-week');
+const btnGlobalMonth = document.getElementById('btn-global-month');
+const globalChartTitle = document.getElementById('global-chart-title');
+const aiModalOverlay = document.getElementById('ai-modal-overlay');
+const aiAnalysisContent = document.getElementById('ai-analysis-content');
+const btnCloseAi = document.getElementById('btn-close-ai');
 
 const inputEmail = document.getElementById('input-email');
 const dayListContainer = document.getElementById('day-list');
@@ -191,10 +147,11 @@ const modalInput = document.getElementById('modal-input');
 const modalConfirm = document.getElementById('modal-confirm');
 const modalCancel = document.getElementById('modal-cancel');
 
-function showModal(label, placeholder = '') {
+function showModal(label, placeholder = '', type = 'text') {
     return new Promise((resolve) => {
         modalLabel.innerHTML = label; // Support HTML
         modalInput.style.display = 'block'; // Ensure input is visible
+        modalInput.type = type;
         modalInput.placeholder = placeholder;
         modalInput.value = '';
         modalOverlay.classList.remove('hidden');
@@ -217,6 +174,7 @@ function showModal(label, placeholder = '') {
 
         function cleanup() {
             modalOverlay.classList.add('hidden');
+            modalInput.type = 'text'; // Reset type to default
             modalConfirm.removeEventListener('click', onConfirm);
             modalCancel.removeEventListener('click', onCancel);
             modalOverlay.removeEventListener('click', onOverlayClick);
@@ -239,7 +197,7 @@ function showConfirm(labelHtml, confirmLabel = 'Eliminar', confirmColor = '#ef44
         modalLabel.innerHTML = labelHtml;
         modalInput.style.display = 'none'; // Hide input for purely confirm dialogs
         modalOverlay.classList.remove('hidden');
-        
+
         // Style the confirm button
         const originalBg = modalConfirm.style.background;
         modalConfirm.style.background = confirmColor;
@@ -294,14 +252,15 @@ function showScreen(screen) {
 
     if (screen === screenHome) {
         renderConsistencyTracker();
+        renderGlobalProgressChart();
     }
 }
 
 // Database sync logic
 async function syncSessionToFirestore() {
-    if (!currentUserEmail) return;
+    if (!currentUserId) return;
     try {
-        await setDoc(doc(db, "workouts", currentUserEmail), currentSession);
+        await setDoc(doc(db, "workouts", currentUserId), currentSession);
     } catch (e) {
         console.error("Error al guardar en Firestore: ", e);
     }
@@ -380,31 +339,21 @@ function migrateSessionData() {
     const exMap = {};
     const logKeys = Object.keys(currentSession.logs || {});
 
-    // Known canonicals
-    const allKnownExNorms = {};
-    for (const cat in exercisesByCategory) {
-        exercisesByCategory[cat].forEach(ex => allKnownExNorms[normalizeText(ex)] = ex);
-    }
-    for (const ex in exerciseDetails) {
-        allKnownExNorms[normalizeText(ex)] = ex;
-    }
-
+    // Map log keys to their canonical (first seen) version
     logKeys.forEach(exKey => {
         const norm = normalizeText(exKey);
-        let canonical = allKnownExNorms[norm];
-        if (!canonical) {
-            if (!exMap[norm]) {
-                exMap[norm] = exKey;
-                canonical = exKey;
-            } else {
-                canonical = exMap[norm];
-            }
+        let canonical;
+        if (!exMap[norm]) {
+            exMap[norm] = exKey;
+            canonical = exKey;
+        } else {
+            canonical = exMap[norm];
         }
 
         if (canonical && canonical !== exKey) {
             modified = true;
             if (!currentSession.logs[canonical]) currentSession.logs[canonical] = {};
-            
+
             const sourceWeeks = currentSession.logs[exKey];
             for (const week in sourceWeeks) {
                 if (!currentSession.logs[canonical][week]) currentSession.logs[canonical][week] = [];
@@ -419,7 +368,7 @@ function migrateSessionData() {
     if (currentSession.customDescriptions) {
         Object.keys(currentSession.customDescriptions).forEach(exKey => {
             const norm = normalizeText(exKey);
-            const canonical = allKnownExNorms[norm] || exMap[norm] || exKey;
+            const canonical = exMap[norm] || exKey;
             if (canonical !== exKey) {
                 modified = true;
                 currentSession.customDescriptions[canonical] = currentSession.customDescriptions[exKey];
@@ -434,7 +383,7 @@ function migrateSessionData() {
             currentSession.customExercises[cat].forEach(ex => {
                 if (!ex) return; // ignore nulls
                 const norm = normalizeText(ex);
-                const canonical = allKnownExNorms[norm] || exMap[norm] || ex;
+                const canonical = exMap[norm] || ex;
                 if (canonical !== ex) modified = true;
                 if (!newList.includes(canonical)) newList.push(canonical);
             });
@@ -448,7 +397,7 @@ function migrateSessionData() {
             currentSession.hiddenExercises[cat].forEach(ex => {
                 if (!ex) return;
                 const norm = normalizeText(ex);
-                const canonical = allKnownExNorms[norm] || exMap[norm] || ex;
+                const canonical = exMap[norm] || ex;
                 if (canonical !== ex) modified = true;
                 if (!newList.includes(canonical)) newList.push(canonical);
             });
@@ -462,7 +411,7 @@ function migrateSessionData() {
             currentSession.exerciseOrder[cat].forEach(ex => {
                 if (!ex) return;
                 const norm = normalizeText(ex);
-                const canonical = allKnownExNorms[norm] || exMap[norm] || ex;
+                const canonical = exMap[norm] || ex;
                 if (canonical !== ex) modified = true;
                 if (!newList.includes(canonical)) newList.push(canonical);
             });
@@ -470,13 +419,57 @@ function migrateSessionData() {
         }
     }
 
+    // ONE-TIME MIGRATION: Populate customExercises from exerciseOrder for legacy users
+    // This runs once per user who started before customExercises was the source of truth.
+    if (!currentSession.migratedCustomExercisesFromOrder) {
+        if (currentSession.exerciseOrder && currentSession.days) {
+            currentSession.days.forEach(day => {
+                const dayId = day.id;
+                const orderExercises = currentSession.exerciseOrder[dayId] || [];
+                if (orderExercises.length > 0) {
+                    if (!currentSession.customExercises[dayId]) {
+                        currentSession.customExercises[dayId] = [];
+                    }
+                    orderExercises.forEach(ex => {
+                        if (ex && !currentSession.customExercises[dayId].includes(ex)) {
+                            currentSession.customExercises[dayId].push(ex);
+                            modified = true;
+                        }
+                    });
+                }
+            });
+        }
+        currentSession.migratedCustomExercisesFromOrder = true;
+        modified = true;
+        console.log('[Migration] customExercises populated from exerciseOrder:', JSON.stringify(currentSession.customExercises));
+    }
+
     return modified;
 }
 
 async function loadSessionFromFirestore() {
-    if (!currentUserEmail) return;
+    if (!currentUserId) return;
     try {
-        const docSnap = await getDoc(doc(db, "workouts", currentUserEmail));
+        const docRef = doc(db, "workouts", currentUserId);
+        let docSnap = await getDoc(docRef);
+
+        // --- SISTEMA DE MIGRACIÓN: Email a UID ---
+        if (!docSnap.exists()) {
+            const userEmail = auth.currentUser?.email;
+            if (userEmail) {
+                const oldDocRef = doc(db, "workouts", userEmail);
+                const oldDocSnap = await getDoc(oldDocRef);
+                if (oldDocSnap.exists()) {
+                    console.log("Migrando datos de sesión desde Email a UID...");
+                    const oldData = oldDocSnap.data();
+                    await setDoc(docRef, oldData);
+                    docSnap = await getDoc(docRef); // Recargar ahora que ya existe el nuevo
+                    showToast('Datos recuperados correctamente', 'success');
+                }
+            }
+        }
+        // -----------------------------------------
+
         if (docSnap.exists()) {
             currentSession = docSnap.data();
             // Asegurarse de que logs y days existen
@@ -495,6 +488,7 @@ async function loadSessionFromFirestore() {
 
             // Automatically fix case-sensitivity duplicated data
             const wasModified = migrateSessionData();
+            
             if (wasModified) {
                 // Background save the migrated structure back to firestore
                 syncSessionToFirestore();
@@ -686,7 +680,7 @@ function renderDayList() {
         }
         const itemToMove = currentSession.days.splice(draggedDayIndex, 1)[0];
         currentSession.days.splice(draggedOverDayIndex, 0, itemToMove);
-        
+
         draggedDayIndex = null;
         draggedOverDayIndex = null;
         renderDayList();
@@ -737,7 +731,7 @@ function renderDayList() {
         btn.style.border = 'none';
         btn.style.padding = '1rem';
         btn.innerHTML = `<span style="color:var(--accent); font-weight:800; margin-right:8px;">DÍA ${index + 1}</span> <span>${dayName}</span>`;
-        
+
         btn.addEventListener('click', () => {
             if (wasDayDragged) {
                 wasDayDragged = false;
@@ -757,11 +751,11 @@ function renderDayList() {
             }
 
             currentSession.days.splice(index, 1);
-            
+
             // Clean up dependent data
-            if(currentSession.customExercises?.[dayId]) delete currentSession.customExercises[dayId];
-            if(currentSession.hiddenExercises?.[dayId]) delete currentSession.hiddenExercises[dayId];
-            if(currentSession.exerciseOrder?.[dayId]) delete currentSession.exerciseOrder[dayId];
+            if (currentSession.customExercises?.[dayId]) delete currentSession.customExercises[dayId];
+            if (currentSession.hiddenExercises?.[dayId]) delete currentSession.hiddenExercises[dayId];
+            if (currentSession.exerciseOrder?.[dayId]) delete currentSession.exerciseOrder[dayId];
 
             renderDayList();
             showToast('🗑 Día eliminado', 'error');
@@ -772,9 +766,9 @@ function renderDayList() {
         let startX = 0;
         let currentX = 0;
         let isSwiping = false;
-        
+
         swipeContent.addEventListener('pointerdown', (e) => {
-            if(e.button !== 0 && e.pointerType === 'mouse') return;
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
             isSwiping = true;
             startX = e.clientX;
             swipeContent.style.transition = 'none';
@@ -846,7 +840,7 @@ function renderDayList() {
 
                 container.style.opacity = '0.2';
             }, 100);
-        }, {passive: true});
+        }, { passive: true });
 
         dragHandle.addEventListener('touchmove', (e) => {
             if (!isDraggingTouch) {
@@ -884,7 +878,7 @@ function renderDayList() {
                     }
                 });
             }
-        }, {passive: false});
+        }, { passive: false });
 
         dragHandle.addEventListener('touchend', () => {
             clearTimeout(holdTimeout);
@@ -924,56 +918,62 @@ function renderDayList() {
 }
 
 // Initialize Exercise List for a specific day
+// Initialize Exercise List for a specific day
 function renderExerciseList(dayId) {
     exerciseListContainer.innerHTML = '';
-    
+
     const dayObj = (currentSession.days || []).find(d => d.id === dayId);
     currentDayTitleEl.textContent = dayObj ? dayObj.name : dayId;
 
-    // Find standard exercises by matching the category key against the day ID.
-    // We use the full key (including number prefix) so that 'Día 1: Tren Superior'
-    // and 'Día 3: Tren Superior' each resolve to their own distinct exercise set.
-    let standardExs = [];
-    const normalizedDayId = normalizeText(dayId);
+    const customExs = currentSession.customExercises[dayId] || [];
+    const hiddenExs = currentSession.hiddenExercises?.[dayId] || [];
 
-    for (const key in exercisesByCategory) {
-        // 1. Exact string match (dayId was already migrated to match the key exactly)
-        if (key === dayId) {
-            standardExs = exercisesByCategory[key];
-            break;
+    // Obtenemos las fechas en las que se ha realizado este día específico
+    const datesOfThisDay = currentSession.sessionDates?.[dayId] || [];
+
+    // ⭐ FIX: Recolectar todos los ejercicios: custom + del histórico (logs)
+    let allExercises = [...customExs];
+
+    // Agregar ejercicios del historial de logs que no estén ocultos
+    for (const exerciseName in currentSession.logs) {
+        let belongsToThisDay = false;
+
+        // 1. ¿Está explícitamente en el orden guardado para este día?
+        if (currentSession.exerciseOrder?.[dayId]?.includes(exerciseName)) {
+            belongsToThisDay = true;
         }
-        // 2. Normalize both sides (handles colon vs no-colon differences, accents, etc.)
-        //    e.g. "Día 1 Tren Superior" vs "Día 1: Tren Superior" → both become "dia 1 tren superior"
-        if (normalizeText(key) === normalizedDayId) {
-            standardExs = exercisesByCategory[key];
-            break;
+
+        // 2. ¿Tiene logs en las fechas que corresponden a este día?
+        // Solo verificamos si no lo confirmamos en el paso anterior
+        if (!belongsToThisDay && datesOfThisDay.length > 0) {
+            const exerciseLogs = currentSession.logs[exerciseName] || [];
+            // Comprobamos si alguna fecha del log coincide con las fechas del día
+            belongsToThisDay = exerciseLogs.some(log => datesOfThisDay.includes(log.date));
+        }
+
+        // Solo agregar si pertenece a ESTE día, no está duplicado y no está oculto
+        if (belongsToThisDay && !allExercises.includes(exerciseName) && !hiddenExs.includes(exerciseName)) {
+            allExercises.push(exerciseName);
         }
     }
 
-    const hidden = currentSession.hiddenExercises?.[dayId] || [];
-    const customExs = currentSession.customExercises[dayId] || [];
-    let allExercises = [
-        ...standardExs.filter(e => !hidden.includes(e)),
-        ...customExs
-    ];
-
-    // Read saved order if it exists, use it to sort
+    // --- Ordenamiento ---
     if (!currentSession.exerciseOrder) currentSession.exerciseOrder = {};
     if (currentSession.exerciseOrder[dayId]) {
         const orderArray = currentSession.exerciseOrder[dayId];
         allExercises.sort((a, b) => {
             let indexA = orderArray.indexOf(a);
             let indexB = orderArray.indexOf(b);
-            // If an exercise is not in the order array (e.g., new custom exercise), append it to the end
             if (indexA === -1) indexA = 9999;
             if (indexB === -1) indexB = 9999;
             return indexA - indexB;
         });
     }
 
-    // Save current active list order for potential moves later
+    // Actualizar el orden activo
     currentSession.exerciseOrder[dayId] = [...allExercises];
 
+    // --- Renderizado de la UI ---
     if (allExercises.length === 0) {
         exerciseListContainer.innerHTML = `
             <div class="empty-state">
@@ -983,11 +983,15 @@ function renderExerciseList(dayId) {
         return;
     }
 
+    // ⭐ El resto del código sigue igual (drag & drop, delete, etc.)
     let draggedItemIndex = null;
     let draggedOverItemIndex = null;
 
     allExercises.forEach((ex, index) => {
         const isCustom = customExs.includes(ex);
+
+        // [TODO: Mantener todo el resto del código de creación de elementos...]
+        // El código de drag, swipe, etc. permanece igual
 
         // Container
         const container = document.createElement('div');
@@ -1007,14 +1011,13 @@ function renderExerciseList(dayId) {
         row.style.width = '100%';
         row.style.display = 'flex';
         row.style.alignItems = 'center';
-        row.style.gap = '0'; 
+        row.style.gap = '0';
         row.style.background = 'var(--card-bg)';
         row.style.border = '1px solid var(--glass-border)';
         row.style.borderRadius = '12px';
         row.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-        row.dataset.index = index; // Store index for reordering
-        row.draggable = false; // Disable direct row dragging for mouse
-
+        row.dataset.index = index;
+        row.draggable = false;
 
         // Drag Handle
         let wasDragged = false;
@@ -1026,15 +1029,14 @@ function renderExerciseList(dayId) {
         dragHandle.style.padding = '0.5rem 1rem';
         dragHandle.style.userSelect = 'none';
         dragHandle.style.touchAction = 'none';
-        dragHandle.draggable = true; // Handle is the draggable part for mouse
-
+        dragHandle.draggable = true;
 
         const btn = document.createElement('button');
         btn.className = 'exercise-btn';
         btn.style.flexGrow = '1';
         btn.style.textAlign = 'left';
-        btn.style.background = 'transparent'; 
-        btn.style.border = 'none'; 
+        btn.style.background = 'transparent';
+        btn.style.border = 'none';
         btn.style.boxShadow = 'none';
         btn.style.padding = '1rem';
         btn.innerHTML = `<span>${ex}</span>`;
@@ -1061,15 +1063,15 @@ function renderExerciseList(dayId) {
             } else {
                 if (!currentSession.hiddenExercises) currentSession.hiddenExercises = {};
                 if (!currentSession.hiddenExercises[dayId]) currentSession.hiddenExercises[dayId] = [];
-                currentSession.hiddenExercises[dayId].push(ex);
+                if (!currentSession.hiddenExercises[dayId].includes(ex)) {
+                    currentSession.hiddenExercises[dayId].push(ex);
+                }
             }
             const activeOrder = currentSession.exerciseOrder && currentSession.exerciseOrder[dayId];
             if (activeOrder) {
                 const orderIdx = activeOrder.indexOf(ex);
                 if (orderIdx > -1) activeOrder.splice(orderIdx, 1);
             }
-            
-            // Note: We don't delete logs so history works, just hide the exercise
 
             renderExerciseList(dayId);
             showToast('🗑 Ejercicio eliminado', 'error');
@@ -1080,10 +1082,9 @@ function renderExerciseList(dayId) {
         let startX = 0;
         let currentX = 0;
         let isSwiping = false;
-        
+
         swipeContent.addEventListener('pointerdown', (e) => {
-            if(e.button !== 0 && e.pointerType === 'mouse') return;
-            
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
             isSwiping = true;
             startX = e.clientX;
             swipeContent.style.transition = 'none';
@@ -1093,7 +1094,7 @@ function renderExerciseList(dayId) {
             if (!isSwiping) return;
             currentX = e.clientX;
             let diff = currentX - startX;
-            if (diff < 0) diff = 0; // only swipe right
+            if (diff < 0) diff = 0;
 
             if (diff > 150) {
                 diff = 150 + (diff - 150) * 0.2;
@@ -1105,7 +1106,7 @@ function renderExerciseList(dayId) {
             if (!isSwiping) return;
             isSwiping = false;
             swipeContent.style.transition = 'transform 0.3s ease-out';
-            
+
             let diff = currentX - startX;
             if (diff > 120) {
                 swipeContent.style.transform = `translateX(100%)`;
@@ -1119,13 +1120,12 @@ function renderExerciseList(dayId) {
         swipeContent.addEventListener('pointercancel', endSwipe);
         swipeContent.addEventListener('pointerleave', endSwipe);
 
-        // --- Drag and Drop Logic for REORDERING (Mouse & Touch on Handle) ---
+        // --- Drag and Drop Logic for REORDERING ---
 
         const applyReorder = async () => {
             if (draggedItemIndex === null || draggedOverItemIndex === null || draggedItemIndex === draggedOverItemIndex) {
                 draggedItemIndex = null;
                 draggedOverItemIndex = null;
-                // Restore opacity in case drop was at same position
                 container.style.opacity = '1';
                 Array.from(exerciseListContainer.children).forEach(child => {
                     child.style.transform = '';
@@ -1136,7 +1136,7 @@ function renderExerciseList(dayId) {
             const list = currentSession.exerciseOrder[dayId];
             const itemToMove = list.splice(draggedItemIndex, 1)[0];
             list.splice(draggedOverItemIndex, 0, itemToMove);
-            
+
             draggedItemIndex = null;
             draggedOverItemIndex = null;
             renderExerciseList(dayId);
@@ -1147,13 +1147,12 @@ function renderExerciseList(dayId) {
             draggedItemIndex = parseInt(row.dataset.index);
             container.style.opacity = '0.5';
             e.dataTransfer.effectAllowed = "move";
-            // Use the container as the drag image
             const rect = container.getBoundingClientRect();
             e.dataTransfer.setDragImage(container, e.clientX - rect.left, e.clientY - rect.top);
         });
 
         row.addEventListener('dragover', (e) => {
-            e.preventDefault(); 
+            e.preventDefault();
             const tgtIndex = parseInt(row.dataset.index);
             if (tgtIndex !== draggedOverItemIndex) {
                 draggedOverItemIndex = tgtIndex;
@@ -1167,8 +1166,8 @@ function renderExerciseList(dayId) {
         });
 
         row.addEventListener('dragleave', () => {
-             container.style.borderTop = '';
-             container.style.borderBottom = '';
+            container.style.borderTop = '';
+            container.style.borderBottom = '';
         });
 
         row.addEventListener('drop', (e) => {
@@ -1215,7 +1214,6 @@ function renderExerciseList(dayId) {
                 draggedItemIndex = initialIndex;
                 if (navigator.vibrate) navigator.vibrate(40);
 
-                // Create ghost element that floats under finger
                 const rect = container.getBoundingClientRect();
                 touchOffsetY = touchStartY - rect.top;
                 ghostEl = container.cloneNode(true);
@@ -1234,11 +1232,10 @@ function renderExerciseList(dayId) {
                 ghostEl.style.transition = 'transform 0.1s ease';
                 document.body.appendChild(ghostEl);
 
-                // Dim the real item
                 container.style.opacity = '0.2';
                 exerciseListContainer.style.overflow = 'visible';
             }, 100);
-        }, {passive: true});
+        }, { passive: true });
 
         dragHandle.addEventListener('touchmove', (e) => {
             if (!isDraggingTouch) {
@@ -1252,10 +1249,8 @@ function renderExerciseList(dayId) {
             const touchY = e.touches[0].clientY;
             const touchX = e.touches[0].clientX;
 
-            // Move ghost
             ghostEl.style.top = (touchY - touchOffsetY) + 'px';
 
-            // Find target position
             ghostEl.style.display = 'none';
             const element = document.elementFromPoint(touchX, touchY);
             ghostEl.style.display = '';
@@ -1272,23 +1267,19 @@ function renderExerciseList(dayId) {
             if (newOverIndex !== draggedOverItemIndex) {
                 draggedOverItemIndex = newOverIndex;
 
-                // Animate siblings to show insertion space
                 Array.from(exerciseListContainer.children).forEach((child, i) => {
                     if (i === draggedItemIndex) return;
                     child.style.transition = 'transform 0.18s ease';
                     if (draggedOverItemIndex !== null) {
                         const childRow = child.querySelector('.list-row');
                         const ci = childRow ? parseInt(childRow.dataset.index) : i;
-                        // If item is in the shifted zone, nudge it
                         if (draggedItemIndex < draggedOverItemIndex) {
-                            // Moving down: nudge items between original and target UP
                             if (ci > draggedItemIndex && ci <= draggedOverItemIndex) {
                                 child.style.transform = 'translateY(-100%)';
                             } else {
                                 child.style.transform = '';
                             }
                         } else {
-                            // Moving up: nudge items between target and original DOWN
                             if (ci >= draggedOverItemIndex && ci < draggedItemIndex) {
                                 child.style.transform = 'translateY(100%)';
                             } else {
@@ -1298,7 +1289,7 @@ function renderExerciseList(dayId) {
                     }
                 });
             }
-        }, {passive: false});
+        }, { passive: false });
 
         dragHandle.addEventListener('touchend', () => {
             clearTimeout(holdTimeout);
@@ -1323,7 +1314,7 @@ function renderExerciseList(dayId) {
 
         row.appendChild(btn);
         row.appendChild(dragHandle);
-        
+
         swipeContent.appendChild(row);
         container.appendChild(deleteBg);
         container.appendChild(swipeContent);
@@ -1359,17 +1350,11 @@ function renderWeekNavigation() {
 function resolveLogKey(exerciseName) {
     const normTarget = normalizeText(exerciseName);
 
-    // 1. Check known predefined exercises first
-    for (const cat in exercisesByCategory) {
-        for (const ex of exercisesByCategory[cat]) {
-            if (normalizeText(ex) === normTarget) return ex;
-        }
-    }
-    // 2. Check existing log keys (in case it's a custom exercise that already has data)
+    // 1. Check existing log keys (in case it's a custom exercise that already has data)
     for (const logKey in currentSession.logs) {
         if (normalizeText(logKey) === normTarget) return logKey;
     }
-    // 3. Fallback to the name as given
+    // 2. Fallback to the name as given
     return exerciseName;
 }
 
@@ -1403,28 +1388,7 @@ async function renameExercise(oldName, newName) {
         }
     }
 
-    // If it was a standard exercise, hide the old one and add the new one as custom
-    let isStandard = false;
-    for (const cat in exercisesByCategory) {
-        if (exercisesByCategory[cat].includes(oldName)) {
-            isStandard = true;
-            break;
-        }
-    }
 
-    if (isStandard && activeDay) {
-        if (!currentSession.hiddenExercises) currentSession.hiddenExercises = {};
-        if (!currentSession.hiddenExercises[activeDay]) currentSession.hiddenExercises[activeDay] = [];
-        if (!currentSession.hiddenExercises[activeDay].includes(oldName)) {
-            currentSession.hiddenExercises[activeDay].push(oldName);
-        }
-
-        if (!currentSession.customExercises) currentSession.customExercises = {};
-        if (!currentSession.customExercises[activeDay]) currentSession.customExercises[activeDay] = [];
-        if (!currentSession.customExercises[activeDay].includes(newName)) {
-            currentSession.customExercises[activeDay].push(newName);
-        }
-    }
 
     activeExercise = newName;
     currentExerciseNameEl.textContent = newName;
@@ -1467,18 +1431,6 @@ function openExercise(exerciseName) {
 
     // Set description details, checking custom desc first
     let details = currentSession.customDescriptions[exerciseName];
-    if (!details) {
-        details = exerciseDetails[exerciseName];
-        if (!details) {
-            const normalizedEx = normalizeText(exerciseName);
-            for (const key in exerciseDetails) {
-                if (normalizeText(key) === normalizedEx) {
-                    details = exerciseDetails[key];
-                    break;
-                }
-            }
-        }
-    }
 
     if (details) {
         descTrabajoEl.innerText = details.trabajo || "-";
@@ -1618,34 +1570,106 @@ function renderVolumeChart() {
     const labels = [];
     const dataPoints = [];
 
-    // maxWeek is dynamic calculated above
+    // Helpers for date/month calculations
+    const getMonday = (d) => {
+        const date = new Date(d);
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        const mon = new Date(date.setDate(diff));
+        mon.setHours(0, 0, 0, 0);
+        return mon;
+    };
+
+    const getMonthLabel = (weekNum) => {
+        if (!currentSession.registrationDate) return 'Desconocido';
+        const regMon = getMonday(new Date(currentSession.registrationDate));
+        const weekMon = new Date(regMon);
+        weekMon.setDate(regMon.getDate() + (weekNum - 1) * 7);
+        return weekMon.toLocaleString('es-ES', { month: 'short', year: '2-digit' });
+    };
+
     let hasData = false;
-    for (let w = 1; w <= maxWeek; w++) {
-        labels.push(`Sem ${w}`);
-        const logs = currentSession.logs[activeExercise][w] || [];
-        
-        let value = 0;
-        
-        if (currentChartType === 'volume') {
-            logs.forEach(log => {
-                value += (Number(log.reps) * Number(log.weight));
-            });
-        } else if (currentChartType === '1rm') {
-            logs.forEach(log => {
-                const rep = Number(log.reps);
-                const weight = Number(log.weight);
-                if (rep > 0) {
-                    const estimated1RM = weight * (1 + (rep / 30));
-                    if (estimated1RM > value) {
-                        value = estimated1RM;
+
+    if (currentTimeUnit === 'week') {
+        for (let w = 1; w <= maxWeek; w++) {
+            labels.push(`Sem ${w}`);
+            const logs = currentSession.logs[activeExercise][w] || [];
+            let value = 0;
+
+            if (currentChartType === 'volume') {
+                logs.forEach(log => {
+                    value += (Number(log.reps) * Number(log.weight));
+                });
+            } else if (currentChartType === '1rm') {
+                logs.forEach(log => {
+                    const rep = Number(log.reps);
+                    const weight = Number(log.weight);
+                    if (rep > 0) {
+                        const estimated1RM = weight * (1 + (rep / 30));
+                        if (estimated1RM > value) {
+                            value = estimated1RM;
+                        }
                     }
-                }
-            });
-            value = Math.round(value * 10) / 10; // Redondear a 1 decimal
+                });
+                value = Math.round(value * 10) / 10;
+            }
+
+            dataPoints.push(value);
+            if (logs.length > 0) hasData = true;
         }
+    } else {
+        // AGREGACIÓN MENSUAL
+        const monthlyData = {}; // { "ene 24": [values] }
         
-        dataPoints.push(value);
-        if (logs.length > 0) hasData = true;
+        for (let w = 1; w <= maxWeek; w++) {
+            const logs = currentSession.logs[activeExercise][w] || [];
+            if (logs.length === 0) continue;
+            
+            const monthLabel = getMonthLabel(w);
+            if (!monthlyData[monthLabel]) monthlyData[monthLabel] = [];
+            
+            let weekValue = 0;
+            if (currentChartType === 'volume') {
+                logs.forEach(log => {
+                    weekValue += (Number(log.reps) * Number(log.weight));
+                });
+                monthlyData[monthLabel].push(weekValue);
+            } else if (currentChartType === '1rm') {
+                logs.forEach(log => {
+                    const rep = Number(log.reps);
+                    const weight = Number(log.weight);
+                    if (rep > 0) {
+                        const estimated1RM = weight * (1 + (rep / 30));
+                        if (estimated1RM > weekValue) weekValue = estimated1RM;
+                    }
+                });
+                monthlyData[monthLabel].push(weekValue);
+            }
+        }
+
+        // Convert monthlyData map to sorted arrays for labels and dataPoints
+        // Since monthLabel is like "may 24", we should ideally sort them chronologically.
+        // But since we iterate w from 1 to maxWeek, the order in which we see months is already chronological.
+        const seenMonths = [];
+        for (let w = 1; w <= maxWeek; w++) {
+            const monthLabel = getMonthLabel(w);
+            if (monthlyData[monthLabel] && !seenMonths.includes(monthLabel)) {
+                seenMonths.push(monthLabel);
+                labels.push(monthLabel);
+                
+                const values = monthlyData[monthLabel];
+                if (currentChartType === 'volume') {
+                    // SUM of volume for the month
+                    const monthSum = values.reduce((a, b) => a + b, 0);
+                    dataPoints.push(monthSum);
+                } else {
+                    // MAX 1RM for the month
+                    const monthMax = Math.max(...values);
+                    dataPoints.push(Math.round(monthMax * 10) / 10);
+                }
+                hasData = true;
+            }
+        }
     }
 
     if (!hasData) {
@@ -1653,7 +1677,7 @@ function renderVolumeChart() {
         if (noChartDataMsg) noChartDataMsg.style.display = 'block';
         return;
     }
-    
+
     chartContainer.style.display = 'block';
     if (noChartDataMsg) noChartDataMsg.style.display = 'none';
 
@@ -1668,7 +1692,7 @@ function renderVolumeChart() {
     let chartColor = '#3b82f6';
     let chartBgColor = 'rgba(59, 130, 246, 0.2)';
     let chartLabel = 'Volumen (kg)';
-    
+
     if (currentChartType === '1rm') {
         chartColor = '#8b5cf6'; // Morado
         chartBgColor = 'rgba(139, 92, 246, 0.2)';
@@ -1710,7 +1734,7 @@ function renderVolumeChart() {
                     cornerRadius: 8,
                     displayColors: false,
                     callbacks: {
-                        label: function(context) {
+                        label: function (context) {
                             return context.parsed.y + ' kg';
                         }
                     }
@@ -1737,6 +1761,366 @@ function renderVolumeChart() {
     });
 }
 
+function analyzeGlobalWeek(weekNum) {
+    let currentWeekVol = 0;
+    const currentWeekData = {};
+
+    Object.entries(currentSession.logs || {}).forEach(([exName, exLogs]) => {
+        const weekLogs = exLogs[weekNum] || [];
+        let exVol = 0;
+        let sets = 0;
+        weekLogs.forEach(log => {
+            exVol += (Number(log.reps) * Number(log.weight));
+            sets++;
+        });
+        if (exVol > 0) {
+            currentWeekData[exName] = { volume: exVol, sets: sets };
+            currentWeekVol += exVol;
+        }
+    });
+
+    let prevWeeksVol = 0;
+    let prevWeeksCount = 0;
+    const prevWeeksAvgData = {};
+
+    // Analyze up to 3 previous weeks
+    for (let w = weekNum - 1; w >= Math.max(1, weekNum - 3); w--) {
+        let hasLogs = false;
+        Object.entries(currentSession.logs || {}).forEach(([exName, exLogs]) => {
+            const weekLogs = exLogs[w] || [];
+            let exVol = 0;
+            let sets = 0;
+            weekLogs.forEach(log => {
+                exVol += (Number(log.reps) * Number(log.weight));
+                sets++;
+            });
+            if (exVol > 0) {
+                hasLogs = true;
+                if (!prevWeeksAvgData[exName]) prevWeeksAvgData[exName] = { volume: 0, sets: 0, count: 0 };
+                prevWeeksAvgData[exName].volume += exVol;
+                prevWeeksAvgData[exName].sets += sets;
+                prevWeeksAvgData[exName].count++;
+                prevWeeksVol += exVol;
+            }
+        });
+        if (hasLogs) prevWeeksCount++;
+    }
+
+    if (prevWeeksCount === 0) {
+        return `No hay suficientes datos históricos previos a la <b>Semana ${weekNum}</b> para realizar una comparación profunda. ¡Sigue entrenando para generar un historial!`;
+    }
+
+    const avgPrevVol = prevWeeksVol / prevWeeksCount;
+    const diff = currentWeekVol - avgPrevVol;
+    const pctDiff = (Math.abs(diff) / avgPrevVol) * 100;
+    const isCurrentWeek = weekNum === maxWeek;
+
+    let analysis = `Comparando la <b>Semana ${weekNum}</b> con tu promedio reciente:<br><br>`;
+
+    if (pctDiff <= 5 && !isCurrentWeek) {
+        analysis += `Tu carga de trabajo se mantuvo muy estable (variación del ${pctDiff.toFixed(1)}%). ¡Excelente consistencia!`;
+    } else if (pctDiff <= 5 && isCurrentWeek) {
+        analysis += `¡Excelente! La semana aún no termina y ya alcanzaste tu volumen promedio habitual.`;
+    } else if (diff > 0) {
+        if (isCurrentWeek) {
+            analysis += `¡Increíble! Aún no termina la semana y ya superaste tu promedio histórico en un <b>${pctDiff.toFixed(1)}%</b>.<br>`;
+        } else {
+            analysis += `¡Gran trabajo! Tu carga subió un <b>${pctDiff.toFixed(1)}%</b>.<br>`;
+        }
+        
+        // Find what increased
+        const increasedEx = [];
+        const makeExLink = (name) => `<span class="ai-ex-link" data-ex="${name}" style="color: #60a5fa; text-decoration: underline; cursor: pointer; font-weight: bold;">${name}</span>`;
+        
+        Object.keys(currentWeekData).forEach(ex => {
+            if (prevWeeksAvgData[ex] && currentWeekData[ex].volume > (prevWeeksAvgData[ex].volume / prevWeeksAvgData[ex].count) * 1.2) {
+                increasedEx.push(makeExLink(ex));
+            }
+        });
+        if (increasedEx.length > 0) {
+            analysis += `Esto se vio impulsado por mejoras en: <i>${increasedEx.slice(0, 2).join(', ')}</i>.`;
+        }
+    } else {
+        if (isCurrentWeek) {
+            const currentPct = ((currentWeekVol / avgPrevVol) * 100).toFixed(1);
+            analysis += `Esta semana está <b>en curso</b>. Llevas un <b>${currentPct}%</b> de tu volumen semanal habitual.<br><br>`;
+        } else {
+            analysis += `Noté una baja del <b>${pctDiff.toFixed(1)}%</b> en tu carga total.<br><br>`;
+        }
+        
+        const makeExLink = (name) => `<span class="ai-ex-link" data-ex="${name}" style="color: #60a5fa; text-decoration: underline; cursor: pointer; font-weight: bold;">${name}</span>`;
+        
+        let missing = [];
+        let dropped = [];
+        
+        const normalize = str => str.trim().toLowerCase();
+
+        // Build exercise -> dayId map from customExercises (complete after migration)
+        // Use day.id as key to distinguish days with same name (e.g. two "Tren Superior" days)
+        const exerciseToDayId = {}; // normalized exercise name -> day.id
+        if (currentSession.days && currentSession.customExercises) {
+            currentSession.days.forEach(day => {
+                (currentSession.customExercises[day.id] || []).forEach(ex => {
+                    const key = normalize(ex);
+                    if (!exerciseToDayId[key]) exerciseToDayId[key] = day.id;
+                });
+            });
+        }
+
+        // Initialize day stats keyed by day.id (unique), store display name separately
+        const dayStats = {}; // dayId -> { missing, dropped, expected, displayName }
+        if (currentSession.days) {
+            currentSession.days.forEach(day => {
+                const count = Object.keys(prevWeeksAvgData).filter(ex => exerciseToDayId[normalize(ex)] === day.id).length;
+                if (count > 0) {
+                    dayStats[day.id] = { missing: [], dropped: [], expected: count, displayName: day.name };
+                }
+            });
+        }
+
+        const findDayObj = (exName) => {
+            const dayId = exerciseToDayId[normalize(exName)];
+            return dayId && dayStats[dayId] ? dayStats[dayId] : null;
+        };
+
+        // Categorize exercises
+        Object.keys(prevWeeksAvgData).forEach(ex => {
+            const avgSets = Math.round(prevWeeksAvgData[ex].sets / prevWeeksAvgData[ex].count);
+            const dObj = findDayObj(ex);
+
+            if (!currentWeekData[ex]) {
+                const item = { name: ex, text: `${makeExLink(ex)} (~${avgSets} series)` };
+                if (dObj) dObj.missing.push(item);
+                else missing.push(item);
+            } else if (currentWeekData[ex].sets < avgSets) {
+                const item = { name: ex, text: `${makeExLink(ex)} (hiciste ${currentWeekData[ex].sets} de ${avgSets})` };
+                if (dObj) dObj.dropped.push(item);
+                else dropped.push(item);
+            }
+        });
+
+        const skippedDays = [];
+        const poorDays = [];
+
+        Object.values(dayStats).forEach(stat => {
+            const totalMissed = stat.missing.length;
+            const totalAffected = stat.missing.length + stat.dropped.length;
+            const threshold = Math.max(1, Math.ceil(stat.expected * 0.7));
+
+            if (stat.expected > 0 && totalMissed >= threshold) {
+                skippedDays.push(stat.displayName);
+            } else if (stat.expected > 0 && totalAffected >= threshold) {
+                poorDays.push(stat.displayName);
+            } else {
+                stat.missing.forEach(m => missing.push(m));
+                stat.dropped.forEach(d => dropped.push(d));
+            }
+        });
+
+        if (skippedDays.length > 0) {
+            if (isCurrentWeek) {
+                analysis += `Parece que aún te falta entrenar tu(s) rutina(s) de:<br>• <b style="color: #8b5cf6;">${skippedDays.join('</b><br>• <b style="color: #8b5cf6;">')}</b><br><br>`;
+            } else {
+                analysis += `Detecté que omitiste por completo tu(s) día(s) de:<br>• <b style="color: #8b5cf6;">${skippedDays.join('</b><br>• <b style="color: #8b5cf6;">')}</b><br><br>`;
+            }
+        }
+        
+        if (poorDays.length > 0) {
+            analysis += `Noté un bajo rendimiento general (menos series o ejercicios omitidos) en tu(s) día(s) de:<br>• <b style="color: #f59e0b;">${poorDays.join('</b><br>• <b style="color: #f59e0b;">')}</b><br><br>`;
+        }
+
+        if (missing.length > 0) {
+            const missingTexts = missing.map(m => m.text);
+            if (isCurrentWeek) {
+                analysis += `Aún tienes pendiente registrar o realizar:<br>• ${missingTexts.slice(0, 4).join('<br>• ')}<br><br>`;
+            } else {
+                analysis += `También detecté que faltaron ejercicios aislados como:<br>• ${missingTexts.slice(0, 4).join('<br>• ')}<br><br>`;
+            }
+        }
+        if (dropped.length > 0) {
+            const droppedTexts = dropped.map(d => d.text);
+            if (isCurrentWeek) {
+                analysis += `Te faltan algunas series para igualar tu ritmo en:<br>• ${droppedTexts.slice(0, 4).join('<br>• ')}<br>`;
+            } else {
+                analysis += `Además, bajaste la cantidad de series en:<br>• ${droppedTexts.slice(0, 4).join('<br>• ')}<br>`;
+            }
+        }
+        if (missing.length === 0 && dropped.length === 0) {
+            if (isCurrentWeek) {
+                analysis += `Has completado todos tus ejercicios, pero el tonelaje es algo menor. ¡Dalo todo en tus próximos entrenamientos!`;
+            } else {
+                analysis += `Hiciste todas tus series y ejercicios, pero con menos peso o repeticiones en general. Puede que hayas necesitado una semana de descarga (deload).`;
+            }
+        }
+    }
+
+    return analysis;
+}
+
+function renderGlobalProgressChart() {
+    const container = document.getElementById('global-progress-container');
+    const ctx = document.getElementById('globalChart');
+    if (!ctx || !container) return;
+
+    const labels = [];
+    const dataPoints = [];
+    let hasData = false;
+
+    // Helpers for month calculation
+    const getMonday = (d) => {
+        const date = new Date(d);
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        const mon = new Date(date.setDate(diff));
+        mon.setHours(0, 0, 0, 0);
+        return mon;
+    };
+
+    const getMonthLabel = (weekNum) => {
+        if (!currentSession.registrationDate) return 'Desc';
+        const regMon = getMonday(new Date(currentSession.registrationDate));
+        const weekMon = new Date(regMon);
+        weekMon.setDate(regMon.getDate() + (weekNum - 1) * 7);
+        return weekMon.toLocaleString('es-ES', { month: 'short', year: '2-digit' });
+    };
+
+    if (globalTimeUnit === 'week') {
+        globalChartTitle.textContent = 'Carga Total Semanal (kg)';
+        for (let w = 1; w <= maxWeek; w++) {
+            labels.push(`Sem ${w}`);
+            let weeklyTotal = 0;
+            Object.values(currentSession.logs || {}).forEach(exLogs => {
+                const weekLogs = exLogs[w] || [];
+                weekLogs.forEach(log => {
+                    weeklyTotal += (Number(log.reps) * Number(log.weight));
+                });
+            });
+            dataPoints.push(weeklyTotal);
+            if (weeklyTotal > 0) hasData = true;
+        }
+    } else {
+        globalChartTitle.textContent = 'Carga Total Mensual (kg)';
+        const monthlyTotals = {};
+        for (let w = 1; w <= maxWeek; w++) {
+            let weeklyTotal = 0;
+            Object.values(currentSession.logs || {}).forEach(exLogs => {
+                const weekLogs = exLogs[w] || [];
+                weekLogs.forEach(log => {
+                    weeklyTotal += (Number(log.reps) * Number(log.weight));
+                });
+            });
+            if (weeklyTotal === 0) continue;
+            const monthLabel = getMonthLabel(w);
+            monthlyTotals[monthLabel] = (monthlyTotals[monthLabel] || 0) + weeklyTotal;
+        }
+
+        // Chronological order based on week discovery
+        for (let w = 1; w <= maxWeek; w++) {
+            const monthLabel = getMonthLabel(w);
+            if (monthlyTotals[monthLabel] !== undefined && !labels.includes(monthLabel)) {
+                labels.push(monthLabel);
+                dataPoints.push(monthlyTotals[monthLabel]);
+                hasData = true;
+            }
+        }
+    }
+
+    if (!hasData) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+
+    if (globalChartInstance) {
+        globalChartInstance.destroy();
+    }
+
+    // Create Gradient slightly softer
+    const context = ctx.getContext('2d');
+    const chartGradient = context.createLinearGradient(0, 0, 0, 180);
+    chartGradient.addColorStop(0, 'rgba(96, 165, 250, 0.9)'); // Blue top
+    chartGradient.addColorStop(1, 'rgba(59, 130, 246, 0.05)'); // Very soft bottom
+
+    globalChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Carga Total (kg)',
+                data: dataPoints,
+                borderColor: '#3b82f6',
+                backgroundColor: chartGradient,
+                borderWidth: 3,
+                pointBackgroundColor: '#fff',
+                pointBorderColor: '#3b82f6',
+                pointHoverBackgroundColor: '#3b82f6',
+                pointHoverBorderColor: '#fff',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: {
+                    top: 10,
+                    left: 5,
+                    right: 5,
+                    bottom: 5
+                }
+            },
+            onClick: (event, elements, chart) => {
+                if (elements.length > 0 && globalTimeUnit === 'week') {
+                    const idx = elements[0].index;
+                    const rawLabel = chart.data.labels[idx]; // e.g. "Sem 3"
+                    const weekNum = parseInt(rawLabel.replace('Sem ', ''));
+                    if (!isNaN(weekNum)) {
+                        lastWeekAnalyzed = weekNum;
+                        const insight = analyzeGlobalWeek(weekNum);
+                        aiAnalysisContent.innerHTML = insight;
+                        aiModalOverlay.classList.remove('hidden');
+                    }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    titleColor: '#60a5fa',
+                    bodyColor: '#fff',
+                    bodyFont: { weight: 'bold' },
+                    padding: 12,
+                    cornerRadius: 12,
+                    callbacks: {
+                        label: (context) => context.parsed.y.toLocaleString() + ' kg total'
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { 
+                        color: 'rgba(255, 255, 255, 0.03)',
+                        drawBorder: false
+                    },
+                    ticks: { display: false }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { 
+                        color: 'rgba(255, 255, 255, 0.3)',
+                        font: { size: 10, weight: '600' }
+                    }
+                }
+            }
+        }
+    });
+}
+
 // Event Listeners
 btnLogin.addEventListener('click', async () => {
     const email = inputEmail.value.trim().toLowerCase();
@@ -1745,34 +2129,80 @@ btnLogin.addEventListener('click', async () => {
         return;
     }
 
-    // Check if user already exists in Firestore
-    const docRef = doc(db, "workouts", email);
-    const docSnap = await getDoc(docRef);
+    try {
+        // Verificar si el correo ya tiene métodos de inicio de sesión
+        const methods = await fetchSignInMethodsForEmail(auth, email);
+        
+        if (methods.length > 0) {
+            // El usuario ya existe, pedir contraseña para entrar
+            const password = await showModal('Ingresa tu contraseña para entrar:', 'Contraseña', 'password');
+            if (!password) return;
 
-    if (!docSnap.exists()) {
-        // New user — ask confirmation
-        const confirmed = await showConfirm(
-            `El correo <strong>${email}</strong> no está registrado.<br><br>¿Deseas crear una cuenta nueva?`,
-            'Crear cuenta',
-            'var(--primary)'
-        );
-        if (!confirmed) return;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                showToast('Sesión iniciada con éxito', 'success');
+                inputEmail.value = '';
+            } catch (error) {
+                console.error('Error al iniciar sesión:', error);
+                if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                    showToast('Contraseña incorrecta.', 'error');
+                } else {
+                    showToast('Error al iniciar sesión. Intenta de nuevo.', 'error');
+                }
+            }
+        } else {
+            // El usuario no existe, preguntar si desea crear cuenta
+            const confirmCreate = await showConfirm(`El correo <strong>${email}</strong> no está registrado.<br><br>¿Deseas crear una cuenta nueva?`, 'Crear Cuenta', 'var(--accent)');
+            if (!confirmCreate) return;
+
+            const pass1 = await showModal('Crea una contraseña para tu cuenta:', 'Mínimo 6 caracteres', 'password');
+            if (!pass1) return;
+            if (pass1.length < 6) {
+                showToast('La contraseña debe tener al menos 6 caracteres.', 'error');
+                return;
+            }
+
+            const pass2 = await showModal('Repite la contraseña para confirmar:', 'Repetir contraseña', 'password');
+            if (!pass2) return;
+
+            if (pass1 !== pass2) {
+                showToast('Las contraseñas no coinciden.', 'error');
+                return;
+            }
+
+            try {
+                await createUserWithEmailAndPassword(auth, email, pass1);
+                showToast('¡Cuenta creada y sesión iniciada!', 'success');
+                inputEmail.value = '';
+            } catch (error) {
+                console.error('Error al crear cuenta:', error);
+                if (error.code === 'auth/email-already-in-use') {
+                    showToast('Este correo ya está en uso.', 'error');
+                } else {
+                    showToast('Error al crear la cuenta.', 'error');
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error al verificar correo:', error);
+        showToast('Error al verificar el correo. Intenta de nuevo.', 'error');
     }
-
-    currentUserEmail = email;
-    localStorage.setItem('gymtracker_email', email);
-    await loadSessionFromFirestore();
-    welcomeMsg.textContent = `Hola, ${email}`;
-    showScreen(screenHome);
 });
 
-btnLogout.addEventListener('click', () => {
-    localStorage.removeItem('gymtracker_email');
-    currentUserEmail = null;
-    currentSession = { date: new Date().toISOString(), logs: {} };
-    inputEmail.value = '';
-    showScreen(screenLogin);
-    showToast('Sesión cerrada', 'info');
+btnLogout.addEventListener('click', async () => {
+    console.log("Logout button clicked");
+    try {
+        await signOut(auth);
+        window.localStorage.removeItem('emailForSignIn');
+        currentUserId = null;
+        currentSession = { date: new Date().toISOString(), logs: {} };
+        inputEmail.value = '';
+        showScreen(screenLogin);
+        showToast('Sesión cerrada', 'info');
+    } catch (error) {
+        console.error("Error cerrando sesión:", error);
+        showToast('Error al cerrar sesión', 'error');
+    }
 });
 
 btnStartDay.addEventListener('click', () => {
@@ -1821,6 +2251,7 @@ btnAddExercise.addEventListener('click', async () => {
     }
 
     currentSession.customExercises[activeDay].push(exerciseName);
+
     renderExerciseList(activeDay);
     showToast(`✅ "${exerciseName}" agregado`, 'success');
 
@@ -1858,8 +2289,18 @@ btnBackDays.addEventListener('click', () => {
 });
 
 btnBackExercises.addEventListener('click', () => {
-    if (activeDay) renderExerciseList(activeDay);
-    showScreen(screenExercises);
+    if (isNavigatingFromAI) {
+        isNavigatingFromAI = false;
+        showScreen(screenHome);
+        if (lastWeekAnalyzed) {
+            const insight = analyzeGlobalWeek(lastWeekAnalyzed);
+            aiAnalysisContent.innerHTML = insight;
+            aiModalOverlay.classList.remove('hidden');
+        }
+    } else {
+        if (activeDay) renderExerciseList(activeDay);
+        showScreen(screenExercises);
+    }
 });
 
 btnSaveSet.addEventListener('click', saveSet);
@@ -1901,6 +2342,58 @@ btnTab1rm.addEventListener('click', () => {
     renderVolumeChart();
 });
 
+btnTabWeek.addEventListener('click', () => {
+    if (currentTimeUnit === 'week') return;
+    currentTimeUnit = 'week';
+    btnTabWeek.classList.add('active');
+    btnTabMonth.classList.remove('active');
+    renderVolumeChart();
+});
+
+btnTabMonth.addEventListener('click', () => {
+    if (currentTimeUnit === 'month') return;
+    currentTimeUnit = 'month';
+    btnTabMonth.classList.add('active');
+    btnTabWeek.classList.remove('active');
+    renderVolumeChart();
+});
+
+btnGlobalWeek.addEventListener('click', () => {
+    if (globalTimeUnit === 'week') return;
+    globalTimeUnit = 'week';
+    btnGlobalWeek.classList.add('active');
+    btnGlobalMonth.classList.remove('active');
+    renderGlobalProgressChart();
+});
+
+btnGlobalMonth.addEventListener('click', () => {
+    if (globalTimeUnit === 'month') return;
+    globalTimeUnit = 'month';
+    btnGlobalMonth.classList.add('active');
+    btnGlobalWeek.classList.remove('active');
+    renderGlobalProgressChart();
+});
+
+btnCloseAi.addEventListener('click', () => {
+    aiModalOverlay.classList.add('hidden');
+});
+
+aiModalOverlay.addEventListener('click', (e) => {
+    if (e.target === aiModalOverlay) {
+        aiModalOverlay.classList.add('hidden');
+    }
+});
+
+aiAnalysisContent.addEventListener('click', (e) => {
+    const link = e.target.closest('.ai-ex-link');
+    if (link) {
+        const exName = link.getAttribute('data-ex');
+        isNavigatingFromAI = true;
+        aiModalOverlay.classList.add('hidden');
+        openExercise(exName);
+    }
+});
+
 btnBackActiveExercise.addEventListener('click', () => {
     showScreen(screenActiveExercise);
 });
@@ -1908,15 +2401,20 @@ btnBackActiveExercise.addEventListener('click', () => {
 // btnAddWeek logic removed as weeks are now automatic based on calendar progression
 // btnAddWeek.addEventListener('click', () => { ... });
 
-// App Init - auto-login if email is saved in localStorage
-const savedEmail = localStorage.getItem('gymtracker_email');
-if (savedEmail) {
-    currentUserEmail = savedEmail;
-    inputEmail.value = savedEmail;
-    loadSessionFromFirestore().then(() => {
-        welcomeMsg.textContent = `Hola, ${savedEmail}`;
+// App Init & Auth Listener
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        currentUserId = user.uid;
+        await loadSessionFromFirestore();
+        welcomeMsg.textContent = `Hola, ${user.email}`;
         showScreen(screenHome);
-    });
-} else {
-    showScreen(screenLogin);
-}
+    } else {
+        showScreen(screenLogin);
+    }
+
+    // Hide splash screen with a smooth delay
+    setTimeout(() => {
+        if (splashScreen) splashScreen.classList.add('hidden');
+    }, 2000);
+});
+

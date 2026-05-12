@@ -10,11 +10,26 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=5.1">
+    <link rel="stylesheet" href="style.css?v=5.4">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
+    <!-- Splash Screen -->
+    <div id="splash-screen" class="splash-screen">
+        <div class="splash-content">
+            <img src="logo.png" alt="Gym Tracker Logo" class="splash-logo">
+            <div class="splash-loader">
+                <span>Iniciando</span>
+                <div class="dots">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="glass-container">
 
         <!-- Screen 0: Login -->
@@ -36,7 +51,25 @@
             <p id="welcome-msg" style="font-size:0.85rem; color: rgba(255,255,255,0.5); margin-bottom:0.25rem;"></p>
             <p>Registra tu entrenamiento de hoy</p>
             <button id="btn-start-day" class="btn-primary">Iniciar Entrenamiento</button>
-            <button id="btn-logout" class="btn-icon" style="margin-top: 0.5rem; font-size:0.8rem; opacity:0.5;">Cerrar sesión</button>
+            <button id="btn-logout" class="btn-icon btn-logout-home">Cerrar sesión</button>
+
+            <div id="global-progress-container" class="chart-container" style="margin-top: 2rem; display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h3 id="global-chart-title" style="font-size: 0.9rem; margin: 0; opacity: 0.8;">Carga Total (kg)
+                    </h3>
+                    <div class="chart-tabs"
+                        style="margin: 0; padding: 0.15rem; background: rgba(255,255,255,0.05); width: auto;">
+                        <button id="btn-global-week" class="chart-tab active"
+                            style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">Sem</button>
+                        <button id="btn-global-month" class="chart-tab"
+                            style="padding: 0.2rem 0.5rem; font-size: 0.7rem;">Mes</button>
+                    </div>
+                </div>
+                <div style="height: 180px;">
+                    <canvas id="globalChart"></canvas>
+                </div>
+            </div>
+
             <div id="consistency-tracker" class="consistency-container"></div>
         </div>
 
@@ -65,7 +98,8 @@
             <button id="btn-back-exercises" class="btn-icon">← Volver</button>
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
                 <h2 id="current-exercise-name" style="margin-bottom: 0;">Ejercicio</h2>
-                <button id="btn-show-chart" class="fab-btn" style="position: relative; top: 0; right: 0; width: 40px; height: 40px; font-size: 1.2rem;">📊</button>
+                <button id="btn-show-chart" class="fab-btn"
+                    style="position: relative; top: 0; right: 0; width: 40px; height: 40px; font-size: 1.2rem;">📊</button>
             </div>
 
             <div class="exercise-description" id="exercise-description" style="position: relative;">
@@ -109,16 +143,22 @@
         <div id="screen-chart" class="screen hidden">
             <button id="btn-back-active-exercise" class="btn-icon">← Volver al Ejercicio</button>
             <h2 style="margin-bottom: 1rem;">Análisis de Progreso</h2>
-            
+
             <div class="chart-tabs">
                 <button id="btn-tab-volume" class="chart-tab active">Volumen</button>
                 <button id="btn-tab-1rm" class="chart-tab">Fuerza 1RM</button>
             </div>
 
+            <div class="chart-tabs" style="margin-top: 0.5rem; background: rgba(255, 255, 255, 0.05);">
+                <button id="btn-tab-week" class="chart-tab active">Semana</button>
+                <button id="btn-tab-month" class="chart-tab">Mes</button>
+            </div>
+
             <div class="chart-container" id="volume-chart-container" style="display: none; flex: 1; min-height: 300px;">
                 <canvas id="volumeChart"></canvas>
             </div>
-            <p id="no-chart-data-msg" style="display: none; text-align: center; margin-top: 2rem;">Aún no hay suficientes datos para graficar.</p>
+            <p id="no-chart-data-msg" style="display: none; text-align: center; margin-top: 2rem;">Aún no hay
+                suficientes datos para graficar.</p>
         </div>
 
     </div>
@@ -135,6 +175,23 @@
         </div>
     </div>
 
+    <!-- AI Analysis Modal -->
+    <div id="ai-modal-overlay" class="modal-overlay hidden">
+        <div class="modal-box"
+            style="text-align: left; padding: 1.5rem; max-width: 400px; background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(139, 92, 246, 0.3); box-shadow: 0 10px 40px rgba(139, 92, 246, 0.2);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+                <span style="font-size: 1.8rem; line-height: 1;">🤖</span>
+                <h3 style="margin: 0; color: #fff;">Análisis de Progreso</h3>
+            </div>
+            <div id="ai-analysis-content"
+                style="font-size: 0.95rem; line-height: 1.6; color: var(--text-primary); opacity: 0.9;">
+                <!-- Analysis results -->
+            </div>
+            <button id="btn-close-ai" class="btn-primary"
+                style="margin-top: 1.5rem; width: 100%; background: linear-gradient(135deg, #8b5cf6, #3b82f6);">Entendido</button>
+        </div>
+    </div>
+
     <!-- Toast notification -->
     <div id="toast" class="toast"></div>
 
@@ -142,7 +199,7 @@
     <div class="blob blob-1"></div>
     <div class="blob blob-2"></div>
 
-    <script type="module" src="app.js?v=3.2"></script>
+    <script type="module" src="app.js?v=3.9"></script>
 </body>
 
 </html>
